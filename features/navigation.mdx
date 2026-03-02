@@ -1,0 +1,201 @@
+---
+title: Navigation
+description: Get turn-by-turn walking directions to payphones using Apple Maps integration
+---
+
+PayphoneGo integrates with Apple Maps to provide seamless turn-by-turn walking navigation to any payphone, helping users physically locate and claim phones.
+
+## Navigation integration
+
+The app uses MapKit's built-in navigation features to open Apple Maps with walking directions pre-configured.
+
+### Navigate method
+
+Each payphone has a `navigate()` method that launches Apple Maps with walking directions:
+
+```swift Phone.swift
+func navigate() {
+    MKMapItem(location: location, address: nil).openInMaps(launchOptions: [
+        MKLaunchOptionsDirectionsModeKey: MKLaunchOptionsDirectionsModeWalking,
+    ])
+}
+```
+
+<Info>
+The navigation mode is explicitly set to walking, as payphones are typically found in pedestrian-accessible areas.
+</Info>
+
+## Navigation triggers
+
+There are two primary ways to start navigation to a payphone.
+
+<Steps>
+  <Step title="From phone detail sheet">
+    When viewing a specific payphone's details, tap the "Navigate" button in the toolbar.
+    
+    ```swift PhoneDetailSheet.swift
+    ToolbarItem(placement: .primaryAction) {
+        Button("Navigate", systemImage: "location.fill") {
+            phone.navigate()
+        }
+        .buttonStyle(.glassProminent)
+    }
+    ```
+    
+    The button is prominently displayed in the primary action position for quick access.
+  </Step>
+  
+  <Step title="Navigate to closest">
+    From the main map view, tap the "Navigate to closest" button that appears when no phone is selected.
+    
+    ```swift MainScreen.swift
+    Button(action: navigateToClosest) {
+        Label("Navigate to closest", systemImage: "location.fill")
+            .font(.headline.weight(.medium))
+            .padding(.horizontal, 20)
+            .padding(.vertical, 12)
+    }
+    .glassEffect(.regular)
+    ```
+    
+    This automatically finds and navigates to the nearest payphone based on your current location.
+  </Step>
+</Steps>
+
+## Finding the closest payphone
+
+The "Navigate to closest" feature calculates which payphone is nearest to you using straight-line distance.
+
+```swift MainScreen.swift
+func navigateToClosest() {
+    guard let location = locationManager.location, let phones,
+          let closestPhone = phones.min(by: { 
+              $0.location.distance(from: location) < $1.location.distance(from: location) 
+          }) else { return }
+    
+    closestPhone.navigate()
+}
+```
+
+<CardGroup cols={2}>
+  <Card title="Distance calculation" icon="ruler">
+    Uses `CLLocation.distance(from:)` to calculate straight-line distance in meters
+  </Card>
+  <Card title="Minimum selection" icon="arrow-down-short-wide">
+    The `min(by:)` function finds the payphone with the shortest distance
+  </Card>
+</CardGroup>
+
+<Warning>
+This feature requires location permissions. If the user hasn't granted location access, the button won't appear and this functionality will be unavailable.
+</Warning>
+
+## Location data structure
+
+Payphones store location data in multiple formats for flexibility:
+
+```swift Phone.swift
+var lat: Double
+var lng: Double
+
+var location: CLLocation {
+    CLLocation(latitude: lat, longitude: lng)
+}
+
+var coordinate: CLLocationCoordinate2D {
+    location.coordinate
+}
+```
+
+<Note>
+The `location` and `coordinate` properties are computed from the stored `lat` and `lng` values, ensuring consistency across the codebase.
+</Note>
+
+## Apple Maps handoff
+
+When navigation is triggered, the app hands off to Apple Maps with the following configuration:
+
+<Steps>
+  <Step title="Map item creation">
+    Creates an `MKMapItem` with the payphone's location
+    
+    ```swift
+    MKMapItem(location: location, address: nil)
+    ```
+  </Step>
+  
+  <Step title="Launch options">
+    Specifies walking as the preferred directions mode
+    
+    ```swift
+    launchOptions: [
+        MKLaunchOptionsDirectionsModeKey: MKLaunchOptionsDirectionsModeWalking,
+    ]
+    ```
+  </Step>
+  
+  <Step title="Open in Maps">
+    Launches Apple Maps with the configured options
+    
+    ```swift
+    .openInMaps(launchOptions: ...)
+    ```
+  </Step>
+</Steps>
+
+<Tip>
+Apple Maps will automatically use your current location as the starting point for directions.
+</Tip>
+
+## Distance display
+
+Before navigating, users can see the distance to a payphone in the detail sheet:
+
+```swift PhoneDetailSheet.swift
+if let userLocation = locationManager.location {
+    let distance = Measurement(
+        value: phone.location.distance(from: userLocation),
+        unit: UnitLength.meters
+    )
+    
+    Text(distance, format: .measurement(width: .abbreviated))
+        .font(.caption2)
+        .foregroundStyle(.secondary)
+        .fontWeight(.semibold)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 4)
+        .glassEffect(.clear)
+}
+```
+
+The distance is displayed in meters or kilometers (depending on magnitude) with abbreviated units (e.g., "250 m" or "1.5 km").
+
+## User experience flow
+
+A typical navigation flow follows these steps:
+
+<Steps>
+  <Step title="Discover payphone">
+    User finds a payphone of interest on the map, either by browsing or using the "Navigate to closest" feature
+  </Step>
+  
+  <Step title="View details">
+    User taps the marker to open the detail sheet and see the distance and claim history
+  </Step>
+  
+  <Step title="Start navigation">
+    User taps the "Navigate" button in the toolbar
+  </Step>
+  
+  <Step title="Apple Maps opens">
+    Apple Maps launches with walking directions from the user's current location to the payphone
+  </Step>
+  
+  <Step title="Follow directions">
+    User follows turn-by-turn directions to reach the payphone
+  </Step>
+</Steps>
+
+<Info>
+The app remains open in the background while Apple Maps provides navigation, allowing users to easily return to PayphoneGo once they arrive.
+</Info>

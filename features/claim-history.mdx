@@ -1,0 +1,249 @@
+---
+title: Claim history
+description: View detailed claim history for each payphone, including who claimed it and when
+---
+
+Every payphone in PayphoneGo has a detailed claim history showing all users who have successfully claimed it. This feature helps users understand which phones are popular and track their own progress.
+
+## Accessing claim history
+
+Claim history is displayed in the phone detail sheet that appears when you tap any payphone marker on the map.
+
+<Steps>
+  <Step title="Select a payphone">
+    Tap any payphone marker on the map to select it
+  </Step>
+  
+  <Step title="View detail sheet">
+    A sheet slides up from the bottom displaying the payphone's information
+    
+    ```swift MainScreen.swift
+    .sheet(isPresented: Binding($selectedPhoneId)) {
+        NavigationStack {
+            PhoneDetailSheet(phone: selectedPhone!)
+                .environment(\.selectedPhone, selectedPhoneBinding)
+        }
+        .presentationDetents([collapsedDetent, .medium, .large], selection: $sheetPosition)
+    }
+    ```
+  </Step>
+  
+  <Step title="Expand for full history">
+    The sheet automatically expands to medium height if the phone has claims, or remains collapsed for unclaimed phones
+    
+    ```swift MainScreen.swift
+    .onChange(of: selectedPhone) { _, phone in
+        guard let phone else { return }
+        
+        withAnimation {
+            sheetPosition = phone.claimCount > 0 ? .medium : collapsedDetent
+        }
+    }
+    ```
+  </Step>
+</Steps>
+
+## Detail sheet presentation
+
+The detail sheet uses adaptive presentation detents to provide an optimal viewing experience:
+
+<CardGroup cols={3}>
+  <Card title="Collapsed" icon="minus">
+    80pt height - Shows only the address for unclaimed phones
+  </Card>
+  <Card title="Medium" icon="equals">
+    Half screen - Default for phones with claims, showing history
+  </Card>
+  <Card title="Large" icon="maximize">
+    Full screen - Available for phones with many claims
+  </Card>
+</CardGroup>
+
+```swift MainScreen.swift
+fileprivate let collapsedDetent: PresentationDetent = .height(80)
+
+.presentationDetents([collapsedDetent, .medium, .large], selection: $sheetPosition)
+.presentationBackgroundInteraction(.enabled(upThrough: .medium))
+```
+
+<Info>
+Users can still interact with the map while the sheet is at collapsed or medium height, allowing easy browsing of nearby phones.
+</Info>
+
+## Fetching claim details
+
+When a payphone is selected, the app fetches detailed claim information from the API:
+
+```swift PhoneDetailSheet.swift
+.task(id: phone.id) { await fetchPhoneDetails() }
+
+func fetchPhoneDetails() async {
+    do {
+        let details = try await api.phone(id: phone.id)
+        withAnimation { self.details = details }
+    } catch {
+        api.logger.error("Failed to fetch phone details for phone \(phone.id): \(error)")
+    }
+}
+```
+
+The details include the complete list of claims for that payphone.
+
+## Claim data model
+
+Each claim contains information about who claimed the phone and when:
+
+```swift Claim.swift
+struct Claim: Equatable, Hashable, Sendable {
+    var claimOrder: Int
+    var pointsAwarded: Int
+    var claimedAt: Date
+    var voicemailUrl: URL?
+    var displayName: String
+}
+```
+
+<CardGroup cols={2}>
+  <Card title="Claim order" icon="list-ol">
+    The sequence number of this claim (1st, 2nd, 3rd, etc.)
+  </Card>
+  <Card title="Points awarded" icon="star">
+    How many points the user earned for this claim
+  </Card>
+  <Card title="Timestamp" icon="clock">
+    When the claim was made, stored as a Date object
+  </Card>
+  <Card title="User identity" icon="user">
+    The display name of the user who made the claim
+  </Card>
+</CardGroup>
+
+<Note>
+Voicemail URLs are included in the data model but not currently displayed in the UI.
+</Note>
+
+## Displaying claims
+
+Claims are displayed in a list format with clear visual hierarchy:
+
+```swift PhoneDetailSheet.swift
+ForEach(details.claims.enumerated(), id: \.element.claimOrder) { i, claim in
+    VStack(alignment: .leading, spacing: 6) {
+        Text(claim.displayName)
+            .font(.headline.weight(.medium))
+        
+        Text(claim.claimedAt, format: .dateTime.year().month().day().hour().minute())
+            .font(.caption)
+            .foregroundStyle(.secondary)
+    }
+    .listRowInsets(.horizontal, 0)
+    .listRowSeparator(i == 0 ? .hidden : .visible, edges: .top)
+}
+```
+
+### Claim list features
+
+<Steps>
+  <Step title="User name">
+    Displayed prominently in headline font weight
+  </Step>
+  
+  <Step title="Timestamp">
+    Formatted with year, month, day, hour, and minute in secondary text style
+  </Step>
+  
+  <Step title="Visual separation">
+    List rows are separated by dividers (except for the first claim)
+  </Step>
+</Steps>
+
+## Unclaimed phones
+
+When a payphone has never been claimed, a special empty state is displayed:
+
+```swift PhoneDetailSheet.swift
+if phone.claimCount == 0 {
+    ContentUnavailableView(
+        "Unclaimed",
+        systemImage: "phone.down",
+        description: Text("Maybe you could be the first?")
+    )
+    .listRowInsets(.all, 0)
+    .listRowSeparator(.hidden)
+}
+```
+
+<Tip>
+This empty state encourages users to be the first to claim the payphone, creating a sense of opportunity.
+</Tip>
+
+## Loading states
+
+While claim details are being fetched, a progress indicator is shown:
+
+```swift PhoneDetailSheet.swift
+if phone.claimCount == 0 {
+    // Show unclaimed state
+} else if let details {
+    // Show claims list
+} else {
+    ProgressView()
+        .frame(maxWidth: .infinity, alignment: .center)
+        .listRowInsets(.all, 0)
+        .listRowSeparator(.hidden)
+}
+```
+
+## Claim count header
+
+Above the list of claims, a header displays the total number of claims:
+
+```swift PhoneDetailSheet.swift
+Text("\(phone.claimCount) Claim\(phone.claimCount == 1 ? "" : "s")")
+    .font(.headline.weight(.medium).smallCaps())
+    .foregroundStyle(.secondary)
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .offset(y: -25)
+```
+
+The text automatically pluralizes based on the claim count ("1 Claim" vs "2 Claims").
+
+## Dynamic updates
+
+The claim count is synchronized between the map view and detail sheet:
+
+```swift PhoneDetailSheet.swift
+.onChange(of: details?.totalClaims) { _, totalClaims in
+    guard let totalClaims, let selectedPhone else { return }
+    
+    if selectedPhone.claimCount.wrappedValue != totalClaims {
+        selectedPhone.claimCount.wrappedValue = totalClaims
+    }
+}
+```
+
+<Info>
+This ensures that if the claim count changes while viewing the detail sheet, the marker color and other UI elements update accordingly.
+</Info>
+
+## Phone detail API response
+
+The API returns comprehensive phone details including all claims:
+
+```swift API.swift
+struct PhoneDetails: Equatable, Hashable, Codable {
+    struct PhoneData: Identifiable, Equatable, Hashable, Codable {
+        var id: Int
+    }
+    
+    var payphone: PhoneData
+    var claims: [Claim]
+    var totalClaims: Int
+}
+
+func phone(id: Int) async throws -> PhoneDetails {
+    return try await get(baseURL.appending(path: "phone/\(id)"), as: PhoneDetails.self)
+}
+```
+
+The response includes both the individual claims array and a total count for validation.

@@ -1,0 +1,177 @@
+---
+title: Phone discovery
+description: Learn how users discover payphones through the map interface and understand their claim status
+---
+
+PayphoneGo helps users discover payphones in their area through an intuitive map-based interface that highlights unclaimed phones and provides detailed location information.
+
+## Loading payphone data
+
+The app fetches all available payphones from the API when the main screen appears.
+
+<Steps>
+  <Step title="Automatic fetch on launch">
+    Payphone data is automatically loaded when the map screen appears using a SwiftUI task.
+    
+    ```swift MainScreen.swift
+    .task { await fetchPhones() }
+    ```
+  </Step>
+  
+  <Step title="API request">
+    The app retrieves all payphones from the server in a single request.
+    
+    ```swift MainScreen.swift
+    func fetchPhones() async {
+        do {
+            phones = try await api.phones()
+        } catch {
+            api.logger.error("Failed to get phones: \(error)")
+        }
+    }
+    ```
+  </Step>
+  
+  <Step title="Local caching">
+    Retrieved payphones are cached locally for faster subsequent loads.
+    
+    ```swift MainScreen.swift
+    @TinyStorageItem(.cachedPhones) private var phones: [Phone]? = nil
+    ```
+  </Step>
+</Steps>
+
+<Info>
+Cached data allows the map to display payphones immediately on subsequent app launches, even without network connectivity.
+</Info>
+
+## Payphone data model
+
+Each payphone contains comprehensive location and claim information:
+
+```swift Phone.swift
+struct Phone: Identifiable, Equatable, Hashable, Sendable {
+    var id: Int
+    var lat: Double
+    var lng: Double
+    var rawAddress: String
+    var city: String
+    var zip: Int
+    var claimCount: Int
+    var phonesAtLocation: Int
+    var locationPhoneIds: [Int]
+}
+```
+
+<CardGroup cols={2}>
+  <Card title="Location data" icon="location-dot">
+    Latitude, longitude, address, city, and ZIP code provide complete location details
+  </Card>
+  <Card title="Claim data" icon="list-check">
+    The claim count indicates how many times the payphone has been visited
+  </Card>
+  <Card title="Co-located phones" icon="phones">
+    Some locations have multiple payphones, tracked via `phonesAtLocation` and `locationPhoneIds`
+  </Card>
+  <Card title="Coordinate conversion" icon="map">
+    Built-in computed properties convert lat/lng to MapKit-compatible coordinate types
+  </Card>
+</CardGroup>
+
+## Visual discovery
+
+Payphones appear on the map with color-coded markers to help users quickly identify unclaimed opportunities.
+
+### Marker styling
+
+Each payphone is displayed with a teletype icon and color-coded based on claim status:
+
+```swift MainScreen.swift
+Marker(phone.rawAddress, systemImage: "teletype", coordinate: phone.coordinate)
+    .tag(phone.id)
+    .tint(phone.claimCount == 0 ? .red : .gray)
+```
+
+<CardGroup cols={2}>
+  <Card title="Red markers" icon="circle" color="#ef4444">
+    **Unclaimed payphones** (claimCount == 0) display in red to attract attention
+  </Card>
+  <Card title="Gray markers" icon="circle" color="#6b7280">
+    **Claimed payphones** (claimCount > 0) display in gray to indicate they've been visited
+  </Card>
+</CardGroup>
+
+<Tip>
+The red markers make it easy to spot unclaimed payphones at a glance, helping users plan their route efficiently.
+</Tip>
+
+## Filtering options
+
+Users can filter the map view to show only relevant payphones.
+
+```swift MainScreen.swift
+Picker(selection: .constant(1), content: {
+    Text("All")
+        .tag(1)
+    Text("Unclaimed")
+        .tag(2)
+}, label: {
+    Image(systemName: "line.3.horizontal.decrease.circle")
+        .font(.title2)
+})
+```
+
+<Note>
+The filter control is integrated into the map controls overlay for easy access without cluttering the interface.
+</Note>
+
+## Quick discovery features
+
+For rapid payphone hunting, the app provides quick discovery tools.
+
+### Navigate to closest
+
+When no payphone is selected, a prominent button appears to instantly navigate to the nearest unclaimed phone:
+
+```swift MainScreen.swift
+if selectedPhoneId == nil {
+    Button(action: navigateToClosest) {
+        Label("Navigate to closest", systemImage: "location.fill")
+            .font(.headline.weight(.medium))
+            .padding(.horizontal, 20)
+            .padding(.vertical, 12)
+    }
+    .glassEffect(.regular)
+    .offset(y: -30)
+}
+```
+
+### Closest phone calculation
+
+The app calculates the nearest payphone based on straight-line distance from your current location:
+
+```swift MainScreen.swift
+func navigateToClosest() {
+    guard let location = locationManager.location, let phones,
+          let closestPhone = phones.min(by: { 
+              $0.location.distance(from: location) < $1.location.distance(from: location) 
+          }) else { return }
+    
+    closestPhone.navigate()
+}
+```
+
+<Info>
+This feature requires location permissions to be granted. If location access is denied, the button will not appear.
+</Info>
+
+## Detailed information
+
+Tapping any payphone marker displays a detail sheet with comprehensive information about that specific phone. The detail view includes:
+
+- Full street address and city
+- Distance from your current location
+- Complete claim history
+- Navigation button for turn-by-turn directions
+
+See [Claim history](/features/claim-history) for details on viewing historical claims.

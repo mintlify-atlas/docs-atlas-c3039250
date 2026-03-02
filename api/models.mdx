@@ -1,0 +1,209 @@
+---
+title: Data models
+description: Swift data models used in the PayphoneGo iOS app for representing payphones, claims, and related data
+---
+
+The PayphoneGo iOS app uses several Swift structs to model API responses and app data. All models conform to `Codable` for JSON serialization and use snake_case for API communication.
+
+## Phone
+
+Represents a payphone location with geographic and metadata information.
+
+```swift
+struct Phone: Identifiable, Equatable, Hashable, Sendable
+```
+
+### Properties
+
+<ResponseField name="id" type="Int" required>
+  Unique identifier for the payphone
+</ResponseField>
+
+<ResponseField name="lat" type="Double" required>
+  Latitude coordinate of the payphone location
+</ResponseField>
+
+<ResponseField name="lng" type="Double" required>
+  Longitude coordinate of the payphone location
+</ResponseField>
+
+<ResponseField name="rawAddress" type="String" required>
+  Street address of the payphone (mapped from `raw_address` in JSON)
+</ResponseField>
+
+<ResponseField name="city" type="String" required>
+  City where the payphone is located
+</ResponseField>
+
+<ResponseField name="zip" type="Int" required>
+  ZIP code for the payphone location
+</ResponseField>
+
+<ResponseField name="claimCount" type="Int" required>
+  Number of times this payphone has been claimed (mapped from `claim_count` in JSON)
+</ResponseField>
+
+<ResponseField name="phonesAtLocation" type="Int" required>
+  Number of payphones at this location (mapped from `phones_at_location` in JSON)
+</ResponseField>
+
+<ResponseField name="locationPhoneIds" type="[Int]" required>
+  Array of phone IDs at this location (mapped from `location_phone_ids` in JSON)
+</ResponseField>
+
+### Computed properties
+
+<Expandable title="location">
+  <ResponseField name="location" type="CLLocation">
+    Returns a `CLLocation` object constructed from the `lat` and `lng` properties
+  </ResponseField>
+</Expandable>
+
+<Expandable title="address">
+  <ResponseField name="address" type="MKAddress?">
+    Returns an optional `MKAddress` object created from the `rawAddress`
+  </ResponseField>
+</Expandable>
+
+<Expandable title="coordinate">
+  <ResponseField name="coordinate" type="CLLocationCoordinate2D">
+    Returns a `CLLocationCoordinate2D` from the location property
+  </ResponseField>
+</Expandable>
+
+### Methods
+
+```swift
+func navigate()
+```
+
+Opens Apple Maps with walking directions to the payphone location.
+
+### JSON example
+
+```json
+{
+  "id": 1420,
+  "lat": 37.4433600,
+  "lng": -122.1650680,
+  "raw_address": "95 UNIVERSITY AVE",
+  "city": "PALO ALTO",
+  "zip": 94301,
+  "claim_count": 1,
+  "phones_at_location": 1,
+  "location_phone_ids": [1420]
+}
+```
+
+<Note>
+  The Phone model uses `@CodedBy(ValueCoder<Double>())` for `lat` and `lng`, and `@CodedBy(ValueCoder<Int>())` for `zip` to handle type coercion during JSON decoding.
+</Note>
+
+## Claim
+
+Represents a user's claim of a payphone, including points awarded and optional voicemail.
+
+```swift
+struct Claim: Equatable, Hashable, Sendable
+```
+
+### Properties
+
+<ResponseField name="claimOrder" type="Int" required>
+  The order in which this claim was made for the payphone (mapped from `claim_order` in JSON)
+</ResponseField>
+
+<ResponseField name="pointsAwarded" type="Int" required>
+  Number of points awarded for this claim (mapped from `points_awarded` in JSON)
+</ResponseField>
+
+<ResponseField name="claimedAt" type="Date" required>
+  Timestamp when the claim was made (mapped from `claimed_at` in JSON)
+</ResponseField>
+
+<ResponseField name="voicemailUrl" type="URL?">
+  Optional URL to the voicemail recording associated with this claim (mapped from `voicemail_url` in JSON)
+</ResponseField>
+
+<ResponseField name="displayName" type="String" required>
+  Username of the person who made the claim (mapped from `display_name` in JSON)
+</ResponseField>
+
+### JSON example
+
+```json
+{
+  "claim_order": 1,
+  "points_awarded": 20,
+  "claimed_at": "2026-03-02T10:30:00Z",
+  "voicemail_url": "https://stfu.nyc3.digitaloceanspaces.com/payphone-go/voicemail-4-1772420491165.mp3",
+  "display_name": "tkanarsky"
+}
+```
+
+<Note>
+  The `voicemailUrl` field is optional and may be `null` if no voicemail was recorded for the claim.
+</Note>
+
+## PhoneDetails
+
+Nested structure containing detailed information about a specific payphone and its claims.
+
+```swift
+struct PhoneDetails: Equatable, Hashable, Codable
+```
+
+### Properties
+
+<ResponseField name="payphone" type="PhoneData" required>
+  Basic payphone data containing the ID
+</ResponseField>
+
+<ResponseField name="claims" type="[Claim]" required>
+  Array of all claims made for this payphone
+</ResponseField>
+
+<ResponseField name="totalClaims" type="Int" required>
+  Total number of claims for this payphone (mapped from `total_claims` in JSON)
+</ResponseField>
+
+### Nested type: PhoneData
+
+```swift
+struct PhoneData: Identifiable, Equatable, Hashable, Codable {
+    var id: Int
+}
+```
+
+<ResponseField name="id" type="Int" required>
+  Unique identifier for the payphone
+</ResponseField>
+
+### JSON example
+
+```json
+{
+  "payphone": {
+    "id": 1420
+  },
+  "claims": [
+    {
+      "claim_order": 1,
+      "points_awarded": 20,
+      "claimed_at": "2026-03-02T10:30:00Z",
+      "voicemail_url": "https://stfu.nyc3.digitaloceanspaces.com/payphone-go/voicemail-4-1772420491165.mp3",
+      "display_name": "tkanarsky"
+    }
+  ],
+  "total_claims": 1
+}
+```
+
+## Coding conventions
+
+All models use the following conventions:
+
+- **Snake case mapping**: Models use `@CodingKeys(.snake_case)` to automatically convert between Swift's camelCase properties and JSON's snake_case keys
+- **Type coercion**: Some fields use `@CodedBy(ValueCoder<T>())` to handle type conversions during JSON decoding
+- **Protocols**: Models conform to `Codable` for JSON serialization, `Equatable` and `Hashable` for comparison, and `Sendable` for concurrency safety
+- **Identifiable**: Models that have an `id` field conform to `Identifiable` for SwiftUI integration

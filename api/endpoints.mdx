@@ -1,0 +1,170 @@
+---
+title: API endpoints
+description: Reference for all PayphoneGo API endpoints available in the iOS app
+---
+
+The PayphoneGo iOS app communicates with the API at `https://walzr.com/payphone-go/api`. All endpoints use JSON for request and response bodies.
+
+## Base URL
+
+```
+https://walzr.com/payphone-go/api
+```
+
+## Headers
+
+All API requests include the following headers:
+
+<ParamField header="Accept" type="string" default="application/json">
+  Specifies that the client expects JSON responses
+</ParamField>
+
+<ParamField header="User-Agent" type="string" default="PayphoneGO iOS (m1guelpf)">
+  Identifies the client making the request
+</ParamField>
+
+<ParamField header="Content-Type" type="string" default="application/json">
+  Specifies JSON content type for request bodies (when applicable)
+</ParamField>
+
+## Endpoints
+
+### Get all phones
+
+Retrieves a list of all payphones in the system.
+
+```swift
+func phones() async throws -> [Phone]
+```
+
+<ParamField path="method" type="string" default="GET">
+  HTTP method
+</ParamField>
+
+<ParamField path="endpoint" type="string" default="/phones">
+  API endpoint path
+</ParamField>
+
+<ParamField path="returns" type="[Phone]">
+  Array of Phone objects
+</ParamField>
+
+**Example request:**
+
+```bash
+GET https://walzr.com/payphone-go/api/phones
+```
+
+**Example response:**
+
+```json
+[
+  {
+    "id": 1420,
+    "lat": 37.4433600,
+    "lng": -122.1650680,
+    "raw_address": "95 UNIVERSITY AVE",
+    "city": "PALO ALTO",
+    "zip": 94301,
+    "claim_count": 1,
+    "phones_at_location": 1,
+    "location_phone_ids": [1420]
+  }
+]
+```
+
+### Get phone details
+
+Retrieves detailed information about a specific payphone, including its claims.
+
+```swift
+func phone(id: Int) async throws -> PhoneDetails
+```
+
+<ParamField path="method" type="string" default="GET">
+  HTTP method
+</ParamField>
+
+<ParamField path="endpoint" type="string" default="/phone/{id}">
+  API endpoint path with phone ID parameter
+</ParamField>
+
+<ParamField path="id" type="Int" required>
+  The unique identifier of the payphone
+</ParamField>
+
+<ParamField path="returns" type="PhoneDetails">
+  PhoneDetails object containing payphone data and claims
+</ParamField>
+
+**Example request:**
+
+```bash
+GET https://walzr.com/payphone-go/api/phone/1420
+```
+
+**Example response:**
+
+```json
+{
+  "payphone": {
+    "id": 1420
+  },
+  "claims": [
+    {
+      "claim_order": 1,
+      "points_awarded": 20,
+      "claimed_at": "2026-03-02T10:30:00Z",
+      "voicemail_url": "https://stfu.nyc3.digitaloceanspaces.com/payphone-go/voicemail-4-1772420491165.mp3",
+      "display_name": "tkanarsky"
+    }
+  ],
+  "total_claims": 1
+}
+```
+
+## HTTP methods
+
+The API client supports the following HTTP methods:
+
+<CodeGroup>
+
+```swift GET
+func get<T: Decodable>(_ url: URL, headers: [String: String] = [:], as _: T.Type, expects statusCode: Int = 200) async throws -> T
+```
+
+```swift POST
+func post<T: Decodable>(_ url: URL, headers: [String: String] = [:], body: (any Encodable)? = nil, as _: T.Type, expects statusCode: Int = 200) async throws -> T
+```
+
+```swift PUT
+func put<T: Decodable>(_ url: URL, headers: [String: String] = [:], body: (any Encodable)? = nil, as _: T.Type, expects statusCode: Int = 200) async throws -> T
+```
+
+```swift DELETE
+func delete<T: Decodable>(_ url: URL, headers: [String: String] = [:], body: (any Encodable)? = nil, as _: T.Type, expects statusCode: Int = 200) async throws -> T
+```
+
+```swift PATCH
+case patch = "PATCH"
+```
+
+</CodeGroup>
+
+## Error handling
+
+The API uses a custom error type for failed requests:
+
+```swift
+enum Error: Equatable, Swift.Error {
+    case requestFailed(URLResponse)
+}
+```
+
+<Note>
+  All API methods are marked with `async throws` and should be called within an async context with proper error handling.
+</Note>
+
+## Expected status codes
+
+By default, all endpoints expect a `200` status code for successful responses. This can be customized using the `expects` parameter when making API calls.

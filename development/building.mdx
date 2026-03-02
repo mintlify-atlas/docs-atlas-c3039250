@@ -1,0 +1,362 @@
+---
+title: Building and running the app
+description: Build configurations, running the app, and deployment workflows
+---
+
+Learn how to build and run PayphoneGo in different configurations and environments.
+
+## Quick start
+
+### Build and run in Xcode
+
+<Steps>
+  <Step title="Open the project">
+    ```bash
+    open PayphoneGo.xcodeproj
+    ```
+  </Step>
+
+  <Step title="Select a scheme and destination">
+    - Scheme: PayphoneGo
+    - Destination: iPhone simulator or physical device
+  </Step>
+
+  <Step title="Build and run">
+    Press `Cmd+R` or click the Play button in Xcode.
+
+    <Info>
+      First build may take longer while Swift packages are resolved and compiled.
+    </Info>
+  </Step>
+</Steps>
+
+### Build from command line
+
+Build without opening Xcode:
+
+```bash
+xcodebuild -project PayphoneGo.xcodeproj \
+  -scheme PayphoneGo \
+  -configuration Debug \
+  -sdk iphonesimulator \
+  -destination 'platform=iOS Simulator,name=iPhone 15 Pro'
+```
+
+## Build configurations
+
+PayphoneGo has two build configurations:
+
+### Debug configuration
+
+**Purpose**: Local development and testing
+
+**Features**:
+- Debug symbols included
+- Compiler optimizations disabled
+- Debug tools enabled (Pulse, Atlantis)
+- Network debugging via Bonjour
+- Shake gesture to open Pulse console
+
+**Build in Xcode**:
+```bash
+Cmd+B  # Debug is the default configuration
+```
+
+**Build from command line**:
+```bash
+xcodebuild -project PayphoneGo.xcodeproj \
+  -scheme PayphoneGo \
+  -configuration Debug
+```
+
+### Release configuration
+
+**Purpose**: App Store distribution and production testing
+
+**Features**:
+- Compiler optimizations enabled
+- Debug code stripped (no Pulse, Atlantis)
+- Smaller binary size
+- Better performance
+
+**Build in Xcode**:
+1. Product > Scheme > Edit Scheme
+2. Set Run > Build Configuration to Release
+3. Press `Cmd+B`
+
+**Build from command line**:
+```bash
+xcodebuild -project PayphoneGo.xcodeproj \
+  -scheme PayphoneGo \
+  -configuration Release
+```
+
+<Warning>
+  Release builds exclude debug frameworks. Features like Pulse console and Atlantis proxy won't be available.
+</Warning>
+
+## Build settings
+
+### Key settings
+
+| Setting | Value |
+|---------|-------|
+| Deployment Target | iOS 26.2+ |
+| Swift Version | Swift 6 |
+| Bundle Identifier | build.miguel.PayphoneGo |
+| Marketing Version | 1.0 |
+| Current Project Version | 1 |
+
+### Skip macro validation
+
+The build uses `-skipMacroValidation` for Swift macros:
+
+```ruby fastlane/Fastfile:26
+build_app(scheme: "PayphoneGo", xcargs: "-skipMacroValidation")
+```
+
+This is required for packages like MetaCodable, ObfuscateMacro, and DependenciesMacros.
+
+## Running the app
+
+### On iOS Simulator
+
+<Steps>
+  <Step title="Select a simulator">
+    In Xcode, choose a simulator from the device menu:
+    - iPhone 15 Pro (recommended)
+    - iPhone 15 Pro Max
+    - iPhone SE (3rd generation)
+  </Step>
+
+  <Step title="Run the app">
+    Press `Cmd+R`
+  </Step>
+
+  <Step title="Grant permissions">
+    When prompted:
+    - Allow location access (required for map features)
+    - Allow local network access (for debug tools)
+  </Step>
+</Steps>
+
+<Tip>
+  To simulate location on simulator: Debug > Location > Custom Location (or choose a preset like Apple campus).
+</Tip>
+
+### On physical device
+
+<Steps>
+  <Step title="Connect your device">
+    Connect an iPhone running iOS 26.2 or later via USB.
+  </Step>
+
+  <Step title="Trust the device">
+    Unlock the device and tap "Trust" when prompted.
+  </Step>
+
+  <Step title="Select the device in Xcode">
+    Choose your device from the destination menu.
+  </Step>
+
+  <Step title="Configure signing">
+    If not already configured:
+    1. Select the PayphoneGo target
+    2. Go to Signing & Capabilities
+    3. Choose your development team
+    4. Let Xcode create a provisioning profile
+  </Step>
+
+  <Step title="Build and run">
+    Press `Cmd+R`
+
+    <Info>
+      On first run, you may need to trust the developer certificate: Settings > General > VPN & Device Management > [Your Team] > Trust.
+    </Info>
+  </Step>
+</Steps>
+
+## Fastlane workflows
+
+### Deploy to TestFlight
+
+The `deploy` lane builds and uploads to App Store Connect:
+
+```bash
+bundle exec fastlane deploy
+```
+
+**What it does** (from `fastlane/Fastfile:4-29`):
+
+<Steps>
+  <Step title="Set up CI environment">
+    Configures fastlane for continuous integration.
+  </Step>
+
+  <Step title="Authenticate with App Store Connect">
+    Uses API key from environment variables:
+    - `APP_STORE_CONNECT_API_KEY_ID`
+    - `APP_STORE_CONNECT_ISSUER_ID`
+    - `APP_STORE_CONNECT_API_KEY_CONTENT`
+  </Step>
+
+  <Step title="Sync code signing">
+    Downloads App Store provisioning profile via fastlane match.
+  </Step>
+
+  <Step title="Increment build number">
+    Automatically increments to `latest_testflight_build_number + 1`.
+  </Step>
+
+  <Step title="Build the app">
+    Creates a release archive with macro validation skipped.
+  </Step>
+
+  <Step title="Upload to TestFlight">
+    Uploads IPA to App Store Connect (submission skipped for manual review).
+  </Step>
+</Steps>
+
+<Note>
+  The lane currently uploads to TestFlight but skips automatic submission. Uncomment line 27 in `fastlane/Fastfile` to enable external distribution.
+</Note>
+
+### Generate code signing
+
+Create or update provisioning profiles:
+
+```bash
+bundle exec fastlane generate_profiles_and_certificates
+```
+
+**What it does** (from `fastlane/Fastfile:32-46`):
+
+1. Generates development provisioning profile
+2. Generates App Store provisioning profile
+3. Stores certificates and profiles in match repository
+
+Both profiles target bundle identifier: `build.miguel.PayphoneGo`
+
+<Warning>
+  This lane modifies code signing assets (`readonly: false`). Only run when you need to create or update profiles.
+</Warning>
+
+## Clean builds
+
+### Clean build folder
+
+Remove all build artifacts:
+
+**In Xcode**:
+```
+Shift+Cmd+K
+```
+
+**From command line**:
+```bash
+xcodebuild clean -project PayphoneGo.xcodeproj -scheme PayphoneGo
+```
+
+### Reset package caches
+
+If Swift packages aren't resolving correctly:
+
+**In Xcode**:
+1. File > Packages > Reset Package Caches
+2. File > Packages > Resolve Package Versions
+
+**From command line**:
+```bash
+rm -rf ~/Library/Developer/Xcode/DerivedData
+```
+
+### Full clean
+
+Nuclear option to reset everything:
+
+```bash
+# Clean build folder
+xcodebuild clean -project PayphoneGo.xcodeproj -scheme PayphoneGo
+
+# Remove derived data
+rm -rf ~/Library/Developer/Xcode/DerivedData
+
+# Remove package caches
+rm -rf ~/Library/Caches/org.swift.swiftpm
+
+# Remove Xcode caches
+rm -rf ~/Library/Caches/com.apple.dt.Xcode
+```
+
+Then reopen the project and let packages resolve.
+
+## Build troubleshooting
+
+### Common issues
+
+<AccordionGroup>
+  <Accordion title="Package resolution fails">
+    **Symptoms**: Xcode shows package errors or can't resolve dependencies.
+
+    **Solutions**:
+    1. Reset package caches: File > Packages > Reset Package Caches
+    2. Check internet connection (packages are fetched from GitHub)
+    3. Update Xcode to the latest version
+    4. Clear derived data: `rm -rf ~/Library/Developer/Xcode/DerivedData`
+  </Accordion>
+
+  <Accordion title="Macro validation errors">
+    **Symptoms**: Build fails with macro-related errors.
+
+    **Solutions**:
+    1. Ensure `-skipMacroValidation` is in build settings
+    2. Update to Xcode 26.2 or later (Swift 6 macro support)
+    3. Clean build folder: `Shift+Cmd+K`
+  </Accordion>
+
+  <Accordion title="Code signing errors">
+    **Symptoms**: "No provisioning profile" or "Code signing failed" errors.
+
+    **Solutions**:
+    1. Select your team in Signing & Capabilities
+    2. Let Xcode create a development profile automatically
+    3. For production builds, run: `bundle exec fastlane generate_profiles_and_certificates`
+  </Accordion>
+
+  <Accordion title="Fastlane deploy fails">
+    **Symptoms**: Deploy lane exits with error.
+
+    **Solutions**:
+    1. Verify App Store Connect API credentials are set
+    2. Check fastlane version: `bundle exec fastlane --version` (should be >= 2.228.0)
+    3. Run `bundle install` to update dependencies
+    4. Check match repository access
+  </Accordion>
+</AccordionGroup>
+
+## Build performance tips
+
+### Speed up builds
+
+1. **Use incremental builds**: Don't clean unless necessary
+2. **Close other Xcode projects**: Reduces indexing overhead
+3. **Use simulator over device**: Faster deployment
+4. **Enable build parallelization**: Already enabled in project settings
+5. **Limit active architectures in debug**: Set to `arm64` only
+
+### Reduce build times
+
+For large changes affecting many files:
+
+```bash
+# Build with multiple jobs (adjust based on CPU cores)
+xcodebuild -project PayphoneGo.xcodeproj \
+  -scheme PayphoneGo \
+  -jobs 8
+```
+
+## Next steps
+
+- Learn about [Debugging tools](/development/debugging) to troubleshoot runtime issues
+- Understand the [Project structure](/development/project-structure)
+- Review [Development setup](/development/setup) if builds aren't working

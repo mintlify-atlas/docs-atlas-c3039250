@@ -1,0 +1,442 @@
+---
+title: State management
+description: App state management with AppData, dependencies, and persistent storage
+---
+
+PayphoneGo uses a combination of SwiftUI's observation system, dependency injection, and persistent storage to manage application state.
+
+## AppData
+
+The central application state is managed by the `AppData` class (AppData.swift:8):
+
+```swift AppData.swift
+@MainActor @Observable
+final class AppData {
+    var isReady = false
+    
+    func load() async {
+        isReady = true
+        
+        // run on startup
+    }
+    
+    func foreground() async {
+        // run on foreground
+    }
+    
+    func background() async {
+        // run on app background
+    }
+}
+```
+
+<Info>
+`AppData` uses the `@Observable` macro from Swift's Observation framework, enabling automatic view updates when properties change.
+</Info>
+
+## Lifecycle management
+
+The `AppData` lifecycle is tied to the app's scene phase:
+
+```swift RootContainer.swift
+struct ContentView: View {
+    @Environment(\.scenePhase) var scenePhase
+    @Dependency(\.appData) private var appData
+    
+    var body: some View {
+        Group {
+            content
+                .task { await appData.load() }
+                .onChange(of: scenePhase) { _, phase in
+                    switch phase {
+                        case .active: Task { await appData.foreground() }
+                        case .background: Task { await appData.background() }
+                        default: break
+                    }
+                }
+        }
+    }
+}
+```
+
+### Lifecycle hooks
+
+<Steps>
+  <Step title="load()">
+    Called once when the app launches. Use for initialization tasks like loading cached data or setting up services.
+  </Step>
+  
+  <Step title="foreground()">
+    Called when the app becomes active. Use for refreshing data or resuming operations.
+  </Step>
+  
+  <Step title="background()">
+    Called when the app moves to background. Use for cleanup, saving state, or pausing operations.
+  </Step>
+</Steps>
+
+## Dependency injection
+
+PayphoneGo uses [swift-dependencies](https://github.com/pointfreeco/swift-dependencies) for dependency injection.
+
+### Registering dependencies
+
+Dependencies conform to `DependencyKey` and register a live implementation:
+
+<CodeGroup>
+
+```swift AppData
+extension AppData: DependencyKey {
+    static let liveValue = AppData()
+}
+
+extension DependencyValues {
+    var appData: AppData {
+        get { self[AppData.self] }
+        set { self[AppData.self] = newValue }
+    }
+}
+```
+
+```swift API
+extension API: DependencyKey {
+    static let liveValue = API()
+}
+
+extension DependencyValues {
+    var api: API {
+        get { self[API.self] }
+        set { self[API.self] = newValue }
+    }
+}
+```
+
+</CodeGroup>
+
+### Injecting dependencies
+
+Use the `@Dependency` property wrapper to inject dependencies:
+
+```swift MainScreen.swift
+struct MainScreen: View {
+    @Dependency(\.api) var api
+    @Dependency(\.appData) var appData
+    
+    var body: some View {
+        // Use injected dependencies
+    }
+}
+```
+
+<Note>
+The `@Dependency` wrapper automatically provides the registered live value and can be overridden for testing.
+</Note>
+
+## State layers
+
+The app uses multiple layers of state management:
+
+| Layer | Scope | Example | Persistence |
+|-------|-------|---------|-------------|
+| **@State** | View-local state | `selectedPhoneId`, `sheetPosition` | No |
+| **@Observable** | Shared observable state | `LocationManager`, `AppData` | No |
+| **@Dependency** | Global services | `API`, `AppData` | No |
+| **@TinyStorageItem** | Persistent state | `cachedPhones` | Yes |
+
+### View-local state
+
+Transient state that only matters to a single view:
+
+```swift MainScreen.swift
+@State private var selectedPhoneId: Phone.ID? = nil
+@State private var position: MapCameraPosition = .userLocation(fallback: .automatic)
+@State private var sheetPosition: PresentationDetent = collapsedDetent
+```
+
+### Shared state via environment
+
+State shared across the view hierarchy using SwiftUI's environment:
+
+```swift RootContainer.swift
+@State private var locationManager = LocationManager()
+
+var body: some View {
+    Group {
+        content
+    }
+    .environment(locationManager)
+}
+```
+
+Access in child views:
+
+```swift MainScreen.swift
+@Environment(LocationManager.self) var locationManager
+```
+
+### Global dependencies
+
+Singletons and services accessed via dependency injection:
+
+```swift
+@Dependency(\.api) var api
+@Dependency(\.appData) var appData
+```
+
+## Persistent storage
+
+PayphoneGo uses [TinyStorage](https://github.com/m1guelpf/TinyStorage) for key-value persistence.
+
+### Storage configuration
+
+```swift TinyStorage+shared.swift
+extension TinyStorage {
+    enum Keys: String, TinyStorageKey {
+        case user
+        case cachedPhones
+    }
+    
+    fileprivate static let shared = TinyStorage(
+        insideDirectory: URL.documentsDirectory, 
+        name: "prefs"
+    )
+}
+```
+
+### Property wrapper usage
+
+```swift MainScreen.swift
+@TinyStorageItem(.cachedPhones) private var phones: [Phone]? = nil
+```
+
+<Steps>
+  <Step title="Read">
+    On view initialization, `phones` is loaded from persistent storage
+  </Step>
+  
+  <Step title="Update">
+    When `phones` is set, the value is automatically persisted
+  </Step>
+  
+  <Step title="Sync">
+    Changes are written to disk in the Documents directory
+  </Step>
+</Steps>
+
+### Manual storage operations
+
+```swift TinyStorage+shared.swift
+static func retrieve<T: Codable>(type _: T.Type, forKey key: Keys) -> T? {
+    shared.retrieve(type: T.self, forKey: key)
+}
+
+static func store<T: Codable>(_ value: T?, forKey key: Keys) {
+    shared.store(value, forKey: key)
+}
+
+static func remove(key: Keys) {
+    shared.remove(key: key)
+}
+```
+
+**Example:**
+
+```swift
+// Store
+TinyStorage.store(phones, forKey: .cachedPhones)
+
+// Retrieve
+if let cachedPhones = TinyStorage.retrieve(type: [Phone].self, forKey: .cachedPhones) {
+    print("Loaded \(cachedPhones.count) phones from cache")
+}
+
+// Remove
+TinyStorage.remove(key: .cachedPhones)
+```
+
+## Data flow patterns
+
+### API → Cache → View
+
+Typical data flow for fetching and caching:
+
+```swift MainScreen.swift
+func fetchPhones() async {
+    do {
+        phones = try await api.phones()
+        // TinyStorage automatically persists 'phones'
+    } catch {
+        api.logger.error("Failed to get phones: \(error)")
+    }
+}
+```
+
+```mermaid
+graph LR
+    A[API Request] --> B[Network Response]
+    B --> C[Decode to [Phone]]
+    C --> D[@TinyStorageItem]
+    D --> E[Persist to Disk]
+    D --> F[Update View]
+```
+
+### View → Binding → State
+
+Two-way bindings for interactive state:
+
+```swift MainScreen.swift
+var selectedPhoneBinding: Binding<Phone>? {
+    guard let phones = Binding($phones), let selectedPhoneId else { return nil }
+    
+    return phones.first(where: { $0.id == selectedPhoneId })
+}
+
+var selectedPhone: Phone? {
+    get {
+        selectedPhoneBinding?.wrappedValue
+    } set {
+        if let newValue { selectedPhoneBinding?.wrappedValue = newValue }
+        else { selectedPhoneId = nil }
+    }
+}
+```
+
+<Accordion title="How computed bindings work">
+  1. **Read**: `selectedPhoneBinding` finds the phone in the array matching `selectedPhoneId`
+  2. **Write**: Setting `selectedPhone` updates the actual phone object in the `phones` array
+  3. **Propagation**: Changes propagate to all views observing either `selectedPhone` or the phones array
+  4. **Persistence**: Array changes automatically save to TinyStorage
+</Accordion>
+
+## Observable pattern
+
+The `@Observable` macro provides fine-grained reactivity:
+
+```swift LocationManager.swift
+@MainActor @Observable
+final class LocationManager {
+    let manager = CLLocationManager()
+    
+    var location: CLLocation? {
+        manager.location
+    }
+}
+```
+
+### Observation in action
+
+```swift MainScreen.swift
+@Environment(LocationManager.self) var locationManager
+
+var body: some View {
+    map
+        .onChange(of: locationManager.location) { _, location in
+            // Automatically triggered when location changes
+            if location != nil, position.camera != nil {
+                position = .userLocation(fallback: position)
+            }
+        }
+}
+```
+
+<Info>
+Unlike `@ObservableObject`, the `@Observable` macro only triggers updates for views that actually read the changed property.
+</Info>
+
+## Testing state
+
+### Mocking dependencies
+
+```swift
+withDependencies {
+    $0.api.phones = { [Phone.sampleData] }
+    $0.appData = AppData()
+} operation: {
+    // Test code with mocked dependencies
+}
+```
+
+### Preview data
+
+```swift AppData+Previews.swift
+extension View {
+    func withPreviewData() -> some View {
+        self
+            .environment(LocationManager())
+            .withDependencies {
+                $0.api.phones = { [Phone.sampleData] }
+            }
+    }
+}
+```
+
+**Usage:**
+
+```swift
+#Preview {
+    MainScreen()
+        .withPreviewData()
+}
+```
+
+<Warning>
+Always use mock data in previews to avoid making real API requests during development.
+</Warning>
+
+## Best practices
+
+### Keep state minimal
+
+Only persist state that needs to survive app restarts:
+
+```swift
+// ✅ Good: Cache API responses
+@TinyStorageItem(.cachedPhones) private var phones: [Phone]?
+
+// ❌ Bad: Persist transient UI state
+@TinyStorageItem(.selectedPhoneId) private var selectedPhoneId: Int?
+```
+
+### Use appropriate state scope
+
+| Use Case | Solution |
+|----------|----------|
+| Local UI state | `@State` |
+| Shared mutable state | `@Observable` + environment |
+| Global services | `@Dependency` |
+| Persistent data | `@TinyStorageItem` |
+
+### Main actor isolation
+
+All state that affects UI must be `@MainActor`:
+
+```swift
+@MainActor @Observable
+final class AppData {
+    // All properties automatically on main actor
+}
+```
+
+### Async initialization
+
+Use `.task` for async state loading:
+
+```swift
+.task { await appData.load() }
+.task { await fetchPhones() }
+```
+
+<Note>
+The `.task` modifier automatically cancels the task when the view disappears.
+</Note>
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="API client" icon="globe" href="/architecture/api-client">
+    Learn about network state management
+  </Card>
+  <Card title="Models" icon="cube" href="/api/models">
+    Explore data models and serialization
+  </Card>
+</CardGroup>

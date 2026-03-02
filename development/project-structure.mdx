@@ -1,0 +1,319 @@
+---
+title: Project structure
+description: Understanding PayphoneGo's directory structure and file organization
+---
+
+PayphoneGo follows a clean, organized structure that separates concerns and makes navigation intuitive.
+
+## Repository structure
+
+```
+PayphoneGo/
+├── PayphoneGo.xcodeproj/    # Xcode project file
+├── fastlane/                 # Build automation
+├── src/                      # All source code
+├── Gemfile                   # Ruby dependencies
+└── Gemfile.lock             # Locked Ruby dependency versions
+```
+
+### Top-level directories
+
+<Note>
+  Unlike many iOS projects, PayphoneGo keeps all source code in the `src/` directory rather than a directory matching the app name.
+</Note>
+
+## Source code organization
+
+The `src/` directory contains all Swift code, assets, and configuration:
+
+```
+src/
+├── App.swift                 # App entry point
+├── Info.plist               # App configuration
+├── Bridging-Header.h        # Objective-C bridging header
+├── Assets.xcassets/         # Images and colors
+├── AppIcon.icon/            # App icon source
+├── Extensions/              # Swift extensions
+├── Models/                  # Data models
+├── ViewModels/              # View models
+├── Views/                   # SwiftUI views
+└── Support/                 # Utilities and helpers
+```
+
+## Core files
+
+### App.swift
+
+The application entry point (`src/App.swift:8-22`):
+
+```swift
+@main
+struct PayphoneGoApp: App {
+    init() {
+        #if DEBUG
+        Atlantis.start(hostName: "supernova.local.")
+        NetworkLogger.enableProxy()
+        #endif
+    }
+
+    var body: some Scene {
+        WindowGroup {
+            ContentView()
+        }
+    }
+}
+```
+
+Key responsibilities:
+- App initialization
+- Debug tool setup (Atlantis, Pulse)
+- Root scene configuration
+
+### Info.plist
+
+App configuration and capabilities (`src/Info.plist`):
+
+- Bundle identifier: `build.miguel.PayphoneGo`
+- Location permissions: "Show payphones around you."
+- Bonjour services for network debugging
+- Supported orientations (portrait only on iPhone)
+- Local network usage for debug tools
+
+## Directory breakdown
+
+### Extensions/
+
+Swift extensions that enhance standard types:
+
+```
+Extensions/
+├── AppData+Previews.swift          # Preview data helpers
+├── Binding+isPresent.swift         # Optional binding utilities
+├── Coders+default.swift            # Default JSON coders
+├── EnvironmentValues+custom.swift  # Custom environment values
+├── KeyPath+Sendable.swift          # Sendable key path extensions
+├── MKCoordinateRegion+contains.swift  # Map coordinate helpers
+├── MapKit+constants.swift          # MapKit constants
+├── Result+async.swift              # Async result utilities
+├── TinyStorage+shared.swift        # Shared storage instance
+├── View+fullyGlassSheet.swift      # Custom sheet modifiers
+├── View+if.swift                   # Conditional view modifiers
+└── View+onShake.swift              # Shake gesture detection
+```
+
+<Tip>
+  `View+onShake.swift` enables the debug shake gesture to open Pulse console in development builds.
+</Tip>
+
+### Models/
+
+Data models representing core domain objects:
+
+```
+Models/
+├── Claim.swift     # User claim data
+└── Phone.swift     # Payphone location data
+```
+
+These models use MetaCodable for enhanced Codable support.
+
+### ViewModels/
+
+State management and business logic:
+
+```
+ViewModels/
+└── AppData.swift   # Central app state
+```
+
+`AppData.swift` manages global application state using the Dependencies library for dependency injection.
+
+### Views/
+
+SwiftUI views organized by type:
+
+```
+Views/
+├── RootContainer.swift    # Root navigation container
+├── Detail/                # Detail view components
+├── Modifiers/             # Custom view modifiers
+├── Screens/               # Top-level screens
+│   ├── MainScreen.swift
+│   └── UnavailableScreen.swift
+└── Sheets/                # Modal sheets
+```
+
+View hierarchy:
+- **Screens**: Full-screen views (main map, unavailable state)
+- **Detail**: Components for detail views
+- **Sheets**: Modal presentations
+- **Modifiers**: Reusable view modifiers
+
+### Support/
+
+Utility files and helpers:
+
+```
+Support/
+├── API.swift              # Network API client
+├── Animated.swift         # Animation utilities
+├── Destination.swift      # Navigation destinations
+├── LocationManager.swift  # Location services
+├── Logging.swift         # Logging infrastructure
+└── helpers.swift         # General helpers
+```
+
+#### Key support files
+
+**API.swift** (`src/Support/API.swift:7-23`)
+
+Handles all network requests:
+```swift
+@MainActor
+struct API: Sendable {
+    private let baseURL = URL(string: "https://walzr.com/payphone-go/api")!
+    
+    func phones() async throws -> [Phone]
+    func phone(id: Int) async throws -> PhoneDetails
+}
+```
+
+**Logging.swift** (`src/Support/Logging.swift:4-13`)
+
+Structured logging using OSLog:
+```swift
+struct Logger: Sendable {
+    static let app = Logger(category: "App")
+    
+    private let category: String
+    private let logger: os.Logger
+    
+    init(category: String) {
+        self.category = category
+        logger = os.Logger(subsystem: Bundle.main.bundleIdentifier!, category: category)
+    }
+}
+```
+
+Supports debug, info, warning, error, and fault levels with emoji indicators for Xcode previews.
+
+**LocationManager.swift**
+
+Manages Core Location for finding nearby payphones.
+
+## Fastlane structure
+
+Build automation lives in `fastlane/`:
+
+```
+fastlane/
+├── Appfile         # App identifier configuration
+├── Fastfile        # Lane definitions
+├── Matchfile       # Code signing configuration
+└── README.md       # Generated documentation
+```
+
+Key lanes (from `fastlane/Fastfile`):
+- `deploy`: Build and upload to TestFlight
+- `generate_profiles_and_certificates`: Manage code signing
+
+See the [Building](/development/building) guide for details on using fastlane.
+
+## Build configuration
+
+The Xcode project (`PayphoneGo.xcodeproj/project.pbxproj`) defines:
+
+- **Target**: PayphoneGo (iOS app)
+- **Deployment target**: iOS 26.2+
+- **Swift version**: Swift 6 (Swift 2620)
+- **Package dependencies**: 13 Swift packages
+- **Build settings**: Debug and Release configurations
+
+### Conditional compilation
+
+Debug tools use conditional compilation:
+
+```swift
+#if DEBUG
+import Pulse
+import Atlantis
+import PulseProxy
+#endif
+```
+
+This ensures debug frameworks don't bloat release builds.
+
+## Navigation architecture
+
+### RootContainer.swift
+
+The root view uses NavigationKit for state management (`src/Views/RootContainer.swift:8-24`):
+
+```swift
+struct ContentView: View {
+    @State private var locationManager = LocationManager()
+    @State var router = Router(level: 0, identifierTab: nil)
+    
+    var content: some View {
+        NavigationContainer(parentRouter: router, tab: .home) {
+            MainScreen()
+        }
+        .environment(locationManager)
+    }
+}
+```
+
+Key patterns:
+- Environment objects for dependency injection
+- Router-based navigation
+- Location manager as environment dependency
+
+## Asset organization
+
+### Assets.xcassets/
+
+Contains colors and images:
+```
+Assets.xcassets/
+├── AccentColor.colorset/
+└── AppIcon.appiconset/
+```
+
+### AppIcon.icon/
+
+Source files for app icon generation (likely using a tool like AppIconBuilder or similar).
+
+## Configuration files
+
+### Gemfile
+
+Ruby dependencies for fastlane (`Gemfile:5-11`):
+```ruby
+gem 'fastlane', '>= 2.228.0'
+
+# Until Fastlane includes them directly.
+gem 'nkf'
+gem 'abbrev'
+gem 'mutex_m'
+gem 'ostruct'
+```
+
+### Bridging-Header.h
+
+Objective-C bridging header for any Objective-C dependencies (currently minimal).
+
+## Design patterns
+
+PayphoneGo uses modern Swift and SwiftUI patterns:
+
+- **Dependency injection**: Using Point-Free's Dependencies library
+- **Async/await**: For asynchronous operations
+- **Swift Concurrency**: Sendable types, actors, and @MainActor
+- **Observable architecture**: SwiftUI's environment and state management
+- **Extensions**: Organized by type for discoverability
+
+## Next steps
+
+- Learn how to [Build and run](/development/building) the app
+- Explore [Debugging tools](/development/debugging)
+- Set up your [Development environment](/development/setup)

@@ -1,0 +1,170 @@
+---
+title: Map interface
+description: Explore payphones on an interactive map with realistic elevation, visual markers, and intuitive controls
+---
+
+The PayphoneGo map interface is the primary way users discover and interact with payphones. Built using MapKit, it provides a rich, interactive experience with realistic terrain visualization and location-aware features.
+
+## Map display
+
+The map uses Apple's standard map style with realistic elevation to help users better understand the terrain around payphone locations.
+
+```swift MainScreen.swift
+Map(
+    position: $position,
+    selection: $selectedPhoneId.animation()
+) {
+    UserAnnotation()
+    
+    if let phones {
+        ForEach(phones) { phone in
+            Marker(phone.rawAddress, systemImage: "teletype", coordinate: phone.coordinate)
+                .tag(phone.id)
+                .tint(phone.claimCount == 0 ? .red : .gray)
+        }
+    }
+}
+.mapStyle(.standard(elevation: .realistic))
+```
+
+### Visual indicators
+
+Payphones are displayed on the map with distinct visual markers:
+
+<CardGroup cols={2}>
+  <Card title="Unclaimed payphones" icon="phone">
+    Displayed with **red markers** to indicate they haven't been claimed yet
+  </Card>
+  <Card title="Claimed payphones" icon="phone-slash">
+    Displayed with **gray markers** to show they've been visited by other users
+  </Card>
+</CardGroup>
+
+<Note>
+All markers use the "teletype" system icon to maintain a consistent vintage payphone aesthetic throughout the app.
+</Note>
+
+## Map controls
+
+The interface provides several controls to help users navigate and filter the map view.
+
+<Steps>
+  <Step title="User location button">
+    When location permissions are granted, a button appears to quickly center the map on your current location.
+    
+    ```swift MainScreen.swift
+    if locationManager.location != nil {
+        MapUserLocationButton()
+    }
+    ```
+  </Step>
+  
+  <Step title="Filter control">
+    A picker control allows users to filter between all payphones or only unclaimed ones.
+    
+    ```swift MainScreen.swift
+    Picker(selection: .constant(1), content: {
+        Text("All")
+            .tag(1)
+        Text("Unclaimed")
+            .tag(2)
+    }, label: {
+        Image(systemName: "line.3.horizontal.decrease.circle")
+            .font(.title2)
+    })
+    ```
+  </Step>
+  
+  <Step title="Compass and scale">
+    Standard MapKit compass and scale controls help with orientation and distance estimation.
+    
+    ```swift MainScreen.swift
+    MapCompass()
+    MapScaleView()
+    ```
+  </Step>
+</Steps>
+
+## Camera positioning
+
+The map camera automatically adjusts based on user interactions:
+
+### Initial position
+
+When the app launches, the map centers on the user's location (if available) or uses an automatic position.
+
+```swift MainScreen.swift
+@State private var position: MapCameraPosition = .userLocation(fallback: .automatic)
+```
+
+### Dynamic repositioning
+
+When location updates are received, the map smoothly transitions to show the new user location while maintaining the current zoom level.
+
+```swift MainScreen.swift
+.onChange(of: locationManager.location) { _, location in
+    if location != nil, position.camera != nil {
+        position = .userLocation(fallback: position)
+    }
+}
+```
+
+### Selection focus
+
+When a payphone is selected, the map automatically pans to center it with a slight offset, ensuring the detail sheet doesn't obscure the marker.
+
+```swift MainScreen.swift
+.onChange(of: selectedPhone) { _, phone in
+    guard let phone else { return }
+    
+    withAnimation {
+        position = .item(.init(
+            location: CLLocation(latitude: phone.lat - 0.001, longitude: phone.lng),
+            address: phone.address
+        ))
+    }
+}
+```
+
+<Tip>
+The 0.001 latitude offset (approximately 111 meters south) ensures the payphone marker remains visible above the detail sheet.
+</Tip>
+
+## User annotation
+
+Your current location is displayed on the map with a standard user annotation, making it easy to understand your position relative to nearby payphones.
+
+```swift MainScreen.swift
+UserAnnotation()
+```
+
+## Interactive selection
+
+Users can tap any payphone marker to select it and view detailed information:
+
+```swift MainScreen.swift
+Map(
+    position: $position,
+    selection: $selectedPhoneId.animation()
+)
+```
+
+When a payphone is selected, the app:
+
+1. Updates the `selectedPhoneId` state
+2. Animates the camera to focus on the payphone
+3. Presents a detail sheet with claim history and navigation options
+
+<Info>
+The selection binding includes an animation modifier to ensure smooth transitions when tapping markers.
+</Info>
+
+## Performance considerations
+
+Payphone data is cached locally to ensure the map loads quickly even with poor network connectivity:
+
+```swift MainScreen.swift
+@TinyStorageItem(.cachedPhones) private var phones: [Phone]? = nil
+```
+
+The app fetches fresh payphone data in the background while displaying cached markers immediately.

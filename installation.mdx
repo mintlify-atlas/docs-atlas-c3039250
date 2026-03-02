@@ -1,0 +1,168 @@
+---
+title: Installation
+description: Set up your development environment and install PayphoneGo
+---
+
+## System requirements
+
+Before you begin, ensure your development environment meets these requirements:
+
+<CardGroup cols={2}>
+  <Card title="macOS" icon="apple">
+    Latest version of macOS with Xcode support
+  </Card>
+  <Card title="Xcode" icon="code">
+    Xcode 15 or later with iOS 26.2 SDK
+  </Card>
+  <Card title="iOS device" icon="mobile">
+    iOS 26.2 or later for device testing
+  </Card>
+  <Card title="Swift" icon="swift">
+    Swift 6.0 (included with Xcode)
+  </Card>
+</CardGroup>
+
+<Warning>
+  This app targets iOS 26.2, which requires the latest Xcode beta. Make sure you have the appropriate SDK installed.
+</Warning>
+
+## Clone the repository
+
+First, clone the PayphoneGo repository to your local machine:
+
+```bash
+git clone <repository-url>
+cd PayphoneGo
+```
+
+## Project structure
+
+The project follows a clean architecture pattern:
+
+```
+PayphoneGo/
+├── src/
+│   ├── App.swift                 # App entry point
+│   ├── Models/                   # Data models (Phone, Claim)
+│   ├── Views/                    # SwiftUI views
+│   │   ├── Screens/             # Main screens
+│   │   ├── Sheets/              # Modal sheets
+│   │   └── Modifiers/           # Custom view modifiers
+│   ├── ViewModels/              # Observable view models
+│   ├── Support/                 # Utilities and helpers
+│   │   ├── API.swift            # Network layer
+│   │   ├── LocationManager.swift # Location services
+│   │   └── helpers.swift        # Helper functions
+│   └── Extensions/              # Swift extensions
+├── PayphoneGo.xcodeproj/        # Xcode project
+├── Gemfile                       # Ruby dependencies for Fastlane
+└── fastlane/                     # Build automation
+```
+
+## Dependencies
+
+PayphoneGo uses Swift Package Manager for dependency management. The following packages are included:
+
+<Steps>
+  <Step title="MapKit">
+    Apple's native mapping framework (system framework)
+  </Step>
+  <Step title="Dependencies">
+    Swift Dependencies library for dependency injection
+  </Step>
+  <Step title="TinyStorage">
+    Lightweight persistent storage wrapper
+  </Step>
+  <Step title="MetaCodable">
+    Advanced Codable macro support for JSON serialization
+  </Step>
+  <Step title="ButtonKit">
+    Enhanced button components for SwiftUI
+  </Step>
+  <Step title="Debug tools (Debug builds only)">
+    Pulse, Atlantis, and PulseProxy for network debugging
+  </Step>
+</Steps>
+
+<Info>
+  Xcode will automatically resolve and download Swift Package Manager dependencies when you first open the project.
+</Info>
+
+## Ruby dependencies (optional)
+
+If you plan to use Fastlane for build automation, install Ruby dependencies:
+
+```bash
+# Install Bundler if not already installed
+gem install bundler
+
+# Install Fastlane and dependencies
+bundle install
+```
+
+The project requires:
+- Fastlane >= 2.228.0
+- Ruby gems: nkf, abbrev, mutex_m, ostruct
+
+## Location permissions
+
+The app requires location access to show nearby payphones. The `Info.plist` includes:
+
+```xml
+<key>NSLocationWhenInUseUsageDescription</key>
+<string>Show payphones around you.</string>
+```
+
+<Tip>
+  You can customize the location permission message in `src/Info.plist` to better match your use case.
+</Tip>
+
+## Debug configuration
+
+For development builds, the app includes network debugging tools:
+
+```swift src/App.swift
+#if DEBUG
+import Pulse
+import Atlantis
+import PulseProxy
+#endif
+
+@main
+struct PayphoneGoApp: App {
+    init() {
+        #if DEBUG
+        Atlantis.start(hostName: "supernova.local.")
+        NetworkLogger.enableProxy()
+        #endif
+    }
+}
+```
+
+<Note>
+  Debug tools (Pulse, Atlantis, PulseProxy) are only compiled in DEBUG builds and won't be included in release builds.
+</Note>
+
+## Signing configuration
+
+The project uses automatic code signing for development:
+
+- **Bundle Identifier**: `build.miguel.PayphoneGo`
+- **Development Team**: Configured in project settings
+- **Provisioning Profile**: Automatic for development, match for distribution
+
+<Warning>
+  You'll need to change the bundle identifier and development team in Xcode to match your Apple Developer account.
+</Warning>
+
+## Next steps
+
+Now that you've set up the project, you're ready to build and run the app:
+
+<Card
+  title="Quick start"
+  icon="rocket"
+  href="/quickstart"
+>
+  Learn how to build and run PayphoneGo on a device or simulator
+</Card>

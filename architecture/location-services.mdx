@@ -1,0 +1,340 @@
+---
+title: Location services
+description: Location management, permissions, and user tracking in PayphoneGo
+---
+
+The PayphoneGo app uses Core Location to track the user's position and enable location-based features like finding nearby payphones.
+
+## LocationManager
+
+Location functionality is encapsulated in the `LocationManager` class (LocationManager.swift:4):
+
+```swift LocationManager.swift
+@MainActor @Observable
+final class LocationManager {
+    let manager = CLLocationManager()
+    
+    var location: CLLocation? {
+        manager.location
+    }
+    
+    func requestAuthorization() {
+        manager.requestWhenInUseAuthorization()
+    }
+}
+```
+
+<Info>
+The `@Observable` macro makes `LocationManager` automatically trigger SwiftUI view updates when the location changes.
+</Info>
+
+## Architecture decisions
+
+### Main actor isolation
+
+The `LocationManager` is marked `@MainActor` to ensure:
+- Thread-safe access from SwiftUI views
+- Location updates trigger UI changes on the main thread
+- No data races when accessing the `location` property
+
+### Observable pattern
+
+Using `@Observable` instead of `ObservableObject`:
+- Automatic dependency tracking
+- More efficient view updates (only when observed properties change)
+- Cleaner syntax without `@Published` wrappers
+
+## Environment injection
+
+The location manager is provided to the view hierarchy via SwiftUI's environment:
+
+```swift RootContainer.swift
+struct ContentView: View {
+    @State private var locationManager = LocationManager()
+    
+    var body: some View {
+        Group {
+            content
+        }
+        .environment(locationManager)
+    }
+}
+```
+
+### Accessing in views
+
+Views access the location manager using the `@Environment` property wrapper:
+
+```swift MainScreen.swift
+struct MainScreen: View {
+    @Environment(LocationManager.self) var locationManager
+    
+    var body: some View {
+        map
+            .onAppear { locationManager.requestAuthorization() }
+    }
+}
+```
+
+<Note>
+Using environment injection makes the location manager accessible to all child views without explicit passing.
+</Note>
+
+## Permission handling
+
+### Requesting authorization
+
+The app requests "when in use" authorization, which allows location access only while the app is active:
+
+```swift LocationManager.swift
+func requestAuthorization() {
+    manager.requestWhenInUseAuthorization()
+}
+```
+
+<Steps>
+  <Step title="User opens app">
+    App launches and displays the main screen
+  </Step>
+  
+  <Step title="Authorization request">
+    `requestAuthorization()` is called in the view's `onAppear` modifier
+  </Step>
+  
+  <Step title="System prompt">
+    iOS displays the permission dialog to the user
+  </Step>
+  
+  <Step title="Location access">
+    If granted, `manager.location` becomes available
+  </Step>
+</Steps>
+
+### Info.plist configuration
+
+The app must include location usage descriptions in `Info.plist`:
+
+```xml Info.plist
+<key>NSLocationWhenInUseUsageDescription</key>
+<string>We need your location to show nearby payphones</string>
+```
+
+<Warning>
+Without the `NSLocationWhenInUseUsageDescription` key, the app will crash when requesting location permissions.
+</Warning>
+
+## Location usage patterns
+
+### Displaying user location on map
+
+The main map view shows the user's current location:
+
+```swift MainScreen.swift
+Map(
+    position: $position,
+    selection: $selectedPhoneId.animation()
+) {
+    UserAnnotation()
+    // ...
+}
+.mapControls {
+    if locationManager.location != nil {
+        MapUserLocationButton()
+    }
+}
+```
+
+### Reactive position updates
+
+The app reactively updates the map position when location changes:
+
+```swift MainScreen.swift
+.onChange(of: locationManager.location) { _, location in
+    if location != nil, position.camera != nil {
+        position = .userLocation(fallback: position)
+    }
+}
+```
+
+<Accordion title="How location updates work">
+  1. `CLLocationManager` receives a new location from the system
+  2. The `location` computed property returns the updated value
+  3. SwiftUI's observation system detects the change
+  4. The `onChange` modifier triggers
+  5. Map position is updated to center on user location
+</Accordion>
+
+### Finding nearest payphone
+
+The app uses location to calculate distances and find the closest payphone:
+
+```swift MainScreen.swift
+func navigateToClosest() {
+    guard let location = locationManager.location, let phones,
+          let closestPhone = phones.min(by: { 
+              $0.location.distance(from: location) < $1.location.distance(from: location) 
+          }) else { return }
+    
+    closestPhone.navigate()
+}
+```
+
+<Steps>
+  <Step title="Get user location">
+    Access `locationManager.location` to get current position
+  </Step>
+  
+  <Step title="Calculate distances">
+    Use `CLLocation.distance(from:)` to compute distance to each phone
+  </Step>
+  
+  <Step title="Find minimum">
+    Use `min(by:)` to find the phone with the smallest distance
+  </Step>
+  
+  <Step title="Navigate">
+    Call `phone.navigate()` to open Apple Maps with walking directions
+  </Step>
+</Steps>
+
+## Location data flow
+
+```mermaid
+graph TD
+    A[CLLocationManager] --> B[LocationManager.location]
+    B --> C[@Observable triggers]
+    C --> D[SwiftUI View Updates]
+    D --> E[Map Position Update]
+    D --> F[Enable Location Button]
+    D --> G[Distance Calculations]
+```
+
+## Best practices
+
+### Conditional UI based on location
+
+Always check if location is available before showing location-dependent UI:
+
+```swift MainScreen.swift
+.mapControls {
+    if locationManager.location != nil {
+        MapUserLocationButton()
+    }
+}
+```
+
+### Safe unwrapping
+
+Use guard statements when location is required:
+
+```swift
+guard let location = locationManager.location else { 
+    return 
+}
+// Use location safely here
+```
+
+### Fallback positions
+
+Provide fallback map positions when location is unavailable:
+
+```swift
+@State private var position: MapCameraPosition = .userLocation(fallback: .automatic)
+```
+
+<Info>
+The `.automatic` fallback ensures the map still displays with a reasonable view even without location access.
+</Info>
+
+## Privacy considerations
+
+<Steps>
+  <Step title="Minimal permissions">
+    Request only "when in use" permission, not "always" access
+  </Step>
+  
+  <Step title="Clear messaging">
+    Provide descriptive usage text explaining why location is needed
+  </Step>
+  
+  <Step title="No background tracking">
+    Location is only accessed while the app is active
+  </Step>
+  
+  <Step title="Local processing">
+    Distance calculations happen on-device, location is not sent to servers
+  </Step>
+</Steps>
+
+## Testing location features
+
+### Simulating location in Xcode
+
+Xcode provides simulated locations for testing:
+
+1. Run the app in the simulator
+2. Select **Debug → Simulate Location**
+3. Choose a preset location (e.g., "Apple Park")
+4. Or provide a custom GPX file with coordinates
+
+### Environment override for previews
+
+```swift
+#Preview {
+    MainScreen()
+        .environment(LocationManager())
+}
+```
+
+<Warning>
+Previews don't have access to real location services. The location manager will return `nil` unless mocked.
+</Warning>
+
+## Extending location features
+
+To add new location-based features:
+
+<CodeGroup>
+
+```swift Geofencing
+extension LocationManager {
+    func startMonitoring(region: CLCircularRegion) {
+        manager.startMonitoring(for: region)
+    }
+}
+```
+
+```swift Distance formatting
+extension LocationManager {
+    func formattedDistance(to coordinate: CLLocationCoordinate2D) -> String? {
+        guard let location = location else { return nil }
+        let distance = location.distance(from: CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude))
+        return MeasurementFormatter().string(from: Measurement(value: distance, unit: UnitLength.meters))
+    }
+}
+```
+
+```swift Authorization status
+extension LocationManager {
+    var authorizationStatus: CLAuthorizationStatus {
+        manager.authorizationStatus
+    }
+    
+    var isAuthorized: Bool {
+        [.authorizedWhenInUse, .authorizedAlways].contains(authorizationStatus)
+    }
+}
+```
+
+</CodeGroup>
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="Map integration" icon="map" href="/features/map-interface">
+    Learn about MapKit integration
+  </Card>
+  <Card title="Phone model" icon="phone" href="/api/models">
+    Understand the Phone model and navigation
+  </Card>
+</CardGroup>

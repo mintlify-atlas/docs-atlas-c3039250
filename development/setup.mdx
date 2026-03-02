@@ -1,0 +1,196 @@
+---
+title: Development environment setup
+description: Set up your development environment to build and run PayphoneGo
+---
+
+This guide walks you through setting up your development environment for PayphoneGo iOS development.
+
+## Prerequisites
+
+### Required software
+
+<Steps>
+  <Step title="Install Xcode">
+    PayphoneGo requires Xcode 26.2 or later. Download from the Mac App Store or [Apple Developer](https://developer.apple.com/xcode/).
+
+    Verify installation:
+    ```bash
+    xcodebuild -version
+    ```
+  </Step>
+
+  <Step title="Install Xcode Command Line Tools">
+    Required for fastlane and other build tools:
+
+    ```bash
+    xcode-select --install
+    ```
+
+    Verify installation:
+    ```bash
+    xcode-select -p
+    ```
+  </Step>
+
+  <Step title="Install Ruby and Bundler">
+    FastLane requires Ruby. macOS includes Ruby, but you may want to use a version manager like rbenv or RVM.
+
+    Install Bundler:
+    ```bash
+    gem install bundler
+    ```
+  </Step>
+</Steps>
+
+### iOS deployment target
+
+PayphoneGo targets iOS 26.2 and later. Ensure your development device or simulator runs a compatible version.
+
+## Project setup
+
+<Steps>
+  <Step title="Clone the repository">
+    ```bash
+    git clone <repository-url>
+    cd PayphoneGo
+    ```
+  </Step>
+
+  <Step title="Install Ruby dependencies">
+    The project uses fastlane for automation. Install dependencies:
+
+    ```bash
+    bundle install
+    ```
+
+    This installs:
+    - fastlane (>= 2.228.0)
+    - nkf, abbrev, mutex_m, ostruct (fastlane dependencies)
+
+    <Info>
+      See `Gemfile` at the project root for the complete list of Ruby dependencies.
+    </Info>
+  </Step>
+
+  <Step title="Open the project in Xcode">
+    ```bash
+    open PayphoneGo.xcodeproj
+    ```
+
+    Or double-click `PayphoneGo.xcodeproj` in Finder.
+  </Step>
+
+  <Step title="Wait for Swift Package dependencies to resolve">
+    Xcode automatically resolves Swift Package Manager dependencies on first open:
+
+    - TinyStorage (local data persistence)
+    - Atlantis (network debugging)
+    - Pulse/PulseUI/PulseProxy (network logging)
+    - Dependencies/DependenciesMacros (dependency injection)
+    - MetaCodable (Swift codable macros)
+    - ButtonKit (UI components)
+    - HelperCoders (encoding/decoding utilities)
+    - SwiftUIIntrospect (SwiftUI introspection)
+    - ObfuscateMacro (code obfuscation)
+    - NavigationKit (navigation utilities)
+
+    <Note>
+      Package resolution happens automatically. If it fails, go to File > Packages > Reset Package Caches in Xcode.
+    </Note>
+  </Step>
+</Steps>
+
+## Development dependencies
+
+PayphoneGo uses Swift Package Manager exclusively for dependency management. All dependencies are defined in the Xcode project file.
+
+### Core dependencies
+
+- **TinyStorage**: Lightweight local data persistence
+- **Dependencies**: Point-Free's dependency injection library
+- **MetaCodable**: Advanced Codable macro support
+- **NavigationKit**: Navigation state management
+
+### Debug-only dependencies
+
+<Warning>
+  The following packages are included in DEBUG builds only and help with development workflows.
+</Warning>
+
+- **Pulse/PulseUI/PulseProxy**: Network request logging and inspection
+- **Atlantis**: Proxyman integration for network debugging
+
+These tools are conditionally compiled:
+
+```swift src/App.swift:2-6
+#if DEBUG
+import Pulse
+import Atlantis
+import PulseProxy
+#endif
+```
+
+## Code signing
+
+### Development signing
+
+For local development, Xcode manages signing automatically:
+
+1. Select the PayphoneGo target in Xcode
+2. Go to Signing & Capabilities
+3. Choose your development team
+4. Xcode creates a development provisioning profile automatically
+
+### Production signing with fastlane
+
+For App Store builds, the project uses fastlane match:
+
+```bash
+bundle exec fastlane generate_profiles_and_certificates
+```
+
+<Info>
+  This lane generates both development and App Store provisioning profiles. See the [Building](/development/building) guide for more details.
+</Info>
+
+## Network debugging setup
+
+PayphoneGo includes built-in network debugging tools for development builds.
+
+### Bonjour services
+
+The app advertises debugging services via Bonjour (configured in `src/Info.plist:29-33`):
+
+- `_Proxyman._tcp` - For Proxyman debugging
+- `_pulse._tcp` - For Pulse network logger
+
+<Tip>
+  Grant local network permissions when prompted to enable these debugging features.
+</Tip>
+
+### Atlantis configuration
+
+Atlantis is configured to connect to `supernova.local.` (see `src/App.swift:12`):
+
+```swift
+Atlantis.start(hostName: "supernova.local.")
+```
+
+To use a different Proxyman host, modify this value.
+
+## Verifying your setup
+
+After completing setup:
+
+1. Build the project: `Cmd+B` in Xcode
+2. Run on a simulator: `Cmd+R`
+3. Check that location permissions appear (required for map features)
+4. In debug builds, shake the device/simulator to open the Pulse console
+
+If everything works, you're ready to develop!
+
+## Next steps
+
+- Learn about the [Project structure](/development/project-structure)
+- Read the [Building guide](/development/building) for build configurations
+- Explore [Debugging tools](/development/debugging) to troubleshoot issues

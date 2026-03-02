@@ -1,0 +1,368 @@
+---
+title: API client
+description: HTTP client implementation, endpoints, and error handling in PayphoneGo
+---
+
+The API client in PayphoneGo is a lightweight, async/await-based HTTP client that handles all communication with the backend API.
+
+## Architecture
+
+The API client is implemented as a `@MainActor` struct in `API.swift:7` and uses Swift's structured concurrency for all network operations.
+
+```swift API.swift
+@MainActor
+struct API: Sendable {
+    private let baseURL = URL(string: "https://walzr.com/payphone-go/api")!
+    
+    var logger: Logger {
+        Logger(category: "API")
+    }
+}
+```
+
+<Info>
+The API client is marked `@MainActor` to ensure all responses are processed on the main thread, making it safe to directly update UI state.
+</Info>
+
+## Dependency injection
+
+The API client is registered as a dependency using the swift-dependencies library:
+
+```swift API.swift
+extension API: DependencyKey {
+    static let liveValue = API()
+}
+
+extension DependencyValues {
+    var api: API {
+        get { self[API.self] }
+        set { self[API.self] = newValue }
+    }
+}
+```
+
+### Usage in views
+
+Inject the API client into views using the `@Dependency` property wrapper:
+
+```swift MainScreen.swift
+struct MainScreen: View {
+    @Dependency(\.api) var api
+    
+    func fetchPhones() async {
+        do {
+            phones = try await api.phones()
+        } catch {
+            api.logger.error("Failed to get phones: \(error)")
+        }
+    }
+}
+```
+
+## Available endpoints
+
+The API provides the following endpoints:
+
+### Get all phones
+
+Fetch the complete list of payphones:
+
+```swift API.swift
+func phones() async throws -> [Phone]
+```
+
+**Implementation:**
+
+```swift
+func phones() async throws -> [Phone] {
+    return try await get(baseURL.appending(path: "phones"), as: [Phone].self)
+}
+```
+
+**Example usage:**
+
+```swift
+let phones = try await api.phones()
+// Returns: [Phone]
+```
+
+### Get phone details
+
+Fetch detailed information about a specific payphone:
+
+```swift API.swift
+func phone(id: Int) async throws -> PhoneDetails
+```
+
+**Response type:**
+
+```swift API.swift
+struct PhoneDetails: Equatable, Hashable, Codable {
+    struct PhoneData: Identifiable, Equatable, Hashable, Codable {
+        var id: Int
+    }
+    
+    var payphone: PhoneData
+    var claims: [Claim]
+    var totalClaims: Int
+}
+```
+
+**Example usage:**
+
+```swift
+let details = try await api.phone(id: 1420)
+print(details.totalClaims) // Number of claims
+print(details.claims) // Array of Claim objects
+```
+
+## HTTP methods
+
+The API client supports all standard HTTP methods:
+
+```swift API.swift
+enum Method: String {
+    case get = "GET"
+    case put = "PUT"
+    case post = "POST"
+    case patch = "PATCH"
+    case delete = "DELETE"
+}
+```
+
+### Method implementations
+
+<CodeGroup>
+
+```swift GET
+func get<T: Decodable>(
+    _ url: URL,
+    headers: [String: String] = [:],
+    as _: T.Type,
+    expects statusCode: Int = 200
+) async throws -> T {
+    try await send(url, method: .get, headers: headers, as: T.self, expects: statusCode)
+}
+```
+
+```swift POST
+func post<T: Decodable>(
+    _ url: URL,
+    headers: [String: String] = [:],
+    body: (any Encodable)? = nil,
+    as _: T.Type,
+    expects statusCode: Int = 200
+) async throws -> T {
+    try await send(url, method: .post, headers: headers, body: body, as: T.self, expects: statusCode)
+}
+```
+
+```swift PUT
+func put<T: Decodable>(
+    _ url: URL,
+    headers: [String: String] = [:],
+    body: (any Encodable)? = nil,
+    as _: T.Type,
+    expects statusCode: Int = 200
+) async throws -> T {
+    try await send(url, method: .put, headers: headers, body: body, as: T.self, expects: statusCode)
+}
+```
+
+```swift DELETE
+func delete<T: Decodable>(
+    _ url: URL,
+    headers: [String: String] = [:],
+    body: (any Encodable)? = nil,
+    as _: T.Type,
+    expects statusCode: Int = 200
+) async throws -> T {
+    try await send(url, method: .delete, headers: headers, body: body, as: T.self, expects: statusCode)
+}
+```
+
+</CodeGroup>
+
+## Request handling
+
+The core `send` method handles request construction and execution:
+
+```swift API.swift
+private func send(
+    _ url: URL,
+    method: Method = .get,
+    headers: [String: String] = [:],
+    body: (any Encodable)? = nil,
+    expects statusCode: Int = 200,
+    isAuthRetry _: Bool = false
+) async throws -> Data {
+    let (data, response) = try await URLSession.shared.data(for: tap(URLRequest(url: url)) { request in
+        request.httpMethod = method.rawValue
+        
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue("PayphoneGO iOS (m1guelpf)", forHTTPHeaderField: "User-Agent")
+        
+        for (key, value) in headers {
+            request.setValue(value, forHTTPHeaderField: key)
+        }
+        
+        if let body {
+            request.httpBody = try JSONEncoder.default.encode(body)
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        }
+    })
+    
+    guard let response = response as? HTTPURLResponse else {
+        throw Error.requestFailed(response)
+    }
+    
+    if response.statusCode == statusCode {
+        return data
+    }
+    
+    throw Error.requestFailed(response)
+}
+```
+
+### Request headers
+
+All requests include:
+
+| Header | Value | Purpose |
+|--------|-------|----------|
+| `Accept` | `application/json` | Expects JSON responses |
+| `User-Agent` | `PayphoneGO iOS (m1guelpf)` | Identifies the client |
+| `Content-Type` | `application/json` | For requests with body |
+
+<Note>
+Additional headers can be passed via the `headers` parameter in any HTTP method.
+</Note>
+
+## JSON encoding/decoding
+
+The API uses custom JSON coders with standardized date formatting:
+
+```swift Coders+default.swift
+fileprivate let dateFormatter = tap(DateFormatter()) { formatter in
+    formatter.timeZone = TimeZone(secondsFromGMT: 0)
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    formatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'"
+}
+
+extension JSONEncoder {
+    static let `default`: JSONEncoder = tap(JSONEncoder()) { encoder in
+        encoder.dateEncodingStrategy = .formatted(dateFormatter)
+    }
+}
+
+extension JSONDecoder {
+    static let `default` = tap(JSONDecoder()) { decoder in
+        decoder.dateDecodingStrategy = .formatted(dateFormatter)
+    }
+}
+```
+
+### Empty response handling
+
+The client handles empty responses gracefully:
+
+```swift API.swift
+private func send<T: Decodable>(
+    _ url: URL,
+    method: Method = .get,
+    headers: [String: String] = [:],
+    body: (any Encodable)? = nil,
+    as _: T.Type,
+    expects statusCode: Int = 200
+) async throws -> T {
+    var data = try await send(url, method: method, headers: headers, body: body, expects: statusCode)
+    
+    if data.isEmpty { data = Data("null".utf8) }
+    return try JSONDecoder.default.decode(T.self, from: data)
+}
+```
+
+## Error handling
+
+The API defines a custom error type:
+
+```swift API.swift
+enum Error: Equatable, Swift.Error {
+    case requestFailed(URLResponse)
+    
+    var localizedDescription: String {
+        switch self {
+            case let .requestFailed(response): "Request failed: \(response)"
+        }
+    }
+}
+```
+
+### Handling errors
+
+<Steps>
+  <Step title="Status code validation">
+    The response status code is checked against the expected status (default: 200)
+  </Step>
+  
+  <Step title="Error throwing">
+    If validation fails, `Error.requestFailed` is thrown with the response
+  </Step>
+  
+  <Step title="Error logging">
+    Errors are logged using the API's logger instance
+  </Step>
+</Steps>
+
+**Example error handling:**
+
+```swift
+do {
+    let phones = try await api.phones()
+} catch let API.Error.requestFailed(response) {
+    api.logger.error("Request failed: \(response)")
+} catch {
+    api.logger.error("Unexpected error: \(error)")
+}
+```
+
+## Testing
+
+Because the API is registered as a dependency, it can be easily mocked for testing:
+
+```swift
+withDependencies {
+    $0.api.phones = { 
+        [Phone.sampleData] 
+    }
+} operation: {
+    // Test code using mocked API
+}
+```
+
+<Warning>
+Always mock the API in tests to avoid making real network requests during test execution.
+</Warning>
+
+## Logging
+
+The API client includes a logger for debugging:
+
+```swift API.swift
+var logger: Logger {
+    Logger(category: "API")
+}
+```
+
+See the [Debugging documentation](/development/debugging) for more details on the logging system.
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="State management" icon="database" href="/architecture/state-management">
+    Learn how API data flows into app state
+  </Card>
+  <Card title="Models" icon="cube" href="/api/models">
+    Explore data model definitions
+  </Card>
+</CardGroup>

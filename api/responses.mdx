@@ -1,0 +1,262 @@
+---
+title: API responses
+description: Structure and types of API responses in the PayphoneGo iOS app
+---
+
+The PayphoneGo API returns JSON responses that are decoded into Swift types. This page documents the response structures and how they're handled in the iOS app.
+
+## Response format
+
+All API responses use JSON format with `Content-Type: application/json`. The API client automatically decodes responses into the appropriate Swift types.
+
+## Response handling
+
+The API client uses Swift's async/await pattern with automatic JSON decoding:
+
+```swift
+private func send<T: Decodable>(
+    _ url: URL,
+    method: Method = .get,
+    headers: [String: String] = [:],
+    body: (any Encodable)? = nil,
+    as _: T.Type,
+    expects statusCode: Int = 200
+) async throws -> T
+```
+
+<Note>
+  If the response body is empty, the decoder treats it as `null` to allow for nullable return types.
+</Note>
+
+## Status codes
+
+The API client validates HTTP status codes and throws an error if the response doesn't match the expected status:
+
+<ResponseField name="200" type="Success">
+  Default expected status code for successful requests
+</ResponseField>
+
+<ResponseField name="Other" type="Error">
+  Any status code other than the expected value results in an `API.Error.requestFailed` error
+</ResponseField>
+
+### Error response
+
+When a request fails, the API client throws an error:
+
+```swift
+enum Error: Equatable, Swift.Error {
+    case requestFailed(URLResponse)
+}
+```
+
+**Error properties:**
+
+<ResponseField name="requestFailed" type="Error case">
+  Contains the `URLResponse` object for debugging and error handling
+</ResponseField>
+
+<ResponseField name="localizedDescription" type="String">
+  Human-readable error message in the format: `"Request failed: {response}"`
+</ResponseField>
+
+## Response types
+
+### List of phones
+
+Returned by the `/phones` endpoint:
+
+<CodeGroup>
+
+```swift Type signature
+[Phone]
+```
+
+```json Example response
+[
+  {
+    "id": 1420,
+    "lat": 37.4433600,
+    "lng": -122.1650680,
+    "raw_address": "95 UNIVERSITY AVE",
+    "city": "PALO ALTO",
+    "zip": 94301,
+    "claim_count": 1,
+    "phones_at_location": 1,
+    "location_phone_ids": [1420]
+  },
+  {
+    "id": 1421,
+    "lat": 37.4443200,
+    "lng": -122.1630450,
+    "raw_address": "150 UNIVERSITY AVE",
+    "city": "PALO ALTO",
+    "zip": 94301,
+    "claim_count": 0,
+    "phones_at_location": 1,
+    "location_phone_ids": [1421]
+  }
+]
+```
+
+</CodeGroup>
+
+**Response fields:**
+
+<Expandable title="Array of Phone objects">
+  <ResponseField name="id" type="Int" required>
+    Unique identifier for the payphone
+  </ResponseField>
+
+  <ResponseField name="lat" type="Double" required>
+    Latitude coordinate
+  </ResponseField>
+
+  <ResponseField name="lng" type="Double" required>
+    Longitude coordinate
+  </ResponseField>
+
+  <ResponseField name="raw_address" type="String" required>
+    Street address
+  </ResponseField>
+
+  <ResponseField name="city" type="String" required>
+    City name
+  </ResponseField>
+
+  <ResponseField name="zip" type="Int" required>
+    ZIP code
+  </ResponseField>
+
+  <ResponseField name="claim_count" type="Int" required>
+    Number of claims for this phone
+  </ResponseField>
+
+  <ResponseField name="phones_at_location" type="Int" required>
+    Number of phones at this location
+  </ResponseField>
+
+  <ResponseField name="location_phone_ids" type="[Int]" required>
+    Array of phone IDs at this location
+  </ResponseField>
+</Expandable>
+
+### Phone details
+
+Returned by the `/phone/{id}` endpoint:
+
+<CodeGroup>
+
+```swift Type signature
+PhoneDetails
+```
+
+```json Example response
+{
+  "payphone": {
+    "id": 1420
+  },
+  "claims": [
+    {
+      "claim_order": 1,
+      "points_awarded": 20,
+      "claimed_at": "2026-03-02T10:30:00Z",
+      "voicemail_url": "https://stfu.nyc3.digitaloceanspaces.com/payphone-go/voicemail-4-1772420491165.mp3",
+      "display_name": "tkanarsky"
+    },
+    {
+      "claim_order": 2,
+      "points_awarded": 15,
+      "claimed_at": "2026-03-01T14:20:00Z",
+      "voicemail_url": null,
+      "display_name": "user123"
+    }
+  ],
+  "total_claims": 2
+}
+```
+
+</CodeGroup>
+
+**Response fields:**
+
+<ResponseField name="payphone" type="PhoneData" required>
+  Basic payphone information
+  
+  <Expandable title="PhoneData properties">
+    <ResponseField name="id" type="Int" required>
+      Unique identifier for the payphone
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="claims" type="[Claim]" required>
+  Array of all claims made for this payphone
+  
+  <Expandable title="Claim properties">
+    <ResponseField name="claim_order" type="Int" required>
+      Order of the claim (first, second, etc.)
+    </ResponseField>
+
+    <ResponseField name="points_awarded" type="Int" required>
+      Points awarded for this claim
+    </ResponseField>
+
+    <ResponseField name="claimed_at" type="String" required>
+      ISO 8601 timestamp of when the claim was made
+    </ResponseField>
+
+    <ResponseField name="voicemail_url" type="String | null">
+      URL to voicemail recording (optional)
+    </ResponseField>
+
+    <ResponseField name="display_name" type="String" required>
+      Username of the claimer
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="total_claims" type="Int" required>
+  Total number of claims for this payphone
+</ResponseField>
+
+## JSON decoding
+
+The API client uses a default `JSONDecoder` with the following configuration:
+
+```swift
+JSONDecoder.default
+```
+
+**Key features:**
+
+- Automatic snake_case to camelCase conversion via `@CodingKeys(.snake_case)`
+- Type coercion for numeric types using `@CodedBy(ValueCoder<T>())`
+- ISO 8601 date parsing for timestamp fields
+- Nullable field support with Swift optionals
+
+<Note>
+  Empty response bodies are automatically converted to `null` to support nullable return types and prevent decoding errors.
+</Note>
+
+## Async/await usage
+
+All API methods are asynchronous and must be called from an async context:
+
+```swift
+Task {
+    do {
+        let phones = try await api.phones()
+        // Handle successful response
+    } catch let error as API.Error {
+        // Handle API error
+        print(error.localizedDescription)
+    } catch {
+        // Handle other errors
+    }
+}
+```
+
+## Thread safety
+
+The API client is marked with `@MainActor` to ensure all operations execute on the main thread, making it safe for use with SwiftUI views and state management.

@@ -1,0 +1,502 @@
+---
+title: Debugging tools and techniques
+description: Debug PayphoneGo using Pulse, Atlantis, Xcode debugger, and logging tools
+---
+
+PayphoneGo includes powerful debugging tools to help you diagnose issues during development.
+
+## Debug tools overview
+
+PayphoneGo integrates several debugging frameworks exclusively in DEBUG builds:
+
+- **Pulse**: Network request logging and inspection
+- **Atlantis**: Proxyman integration for HTTP/HTTPS traffic
+- **PulseProxy**: Network proxy for Pulse
+- **OSLog**: System-level structured logging
+- **Xcode Debugger**: Breakpoints, LLDB, and view debugging
+
+<Note>
+  Debug tools are conditionally compiled and only available in DEBUG builds. Release builds exclude these frameworks to reduce binary size.
+</Note>
+
+## Pulse network logger
+
+Pulse provides a beautiful in-app console for inspecting network requests.
+
+### Accessing Pulse console
+
+In DEBUG builds, shake your device or simulator to open the Pulse console.
+
+**Implementation** (`src/Views/RootContainer.swift:39-46`):
+
+```swift
+#if DEBUG
+    .onShake { showingPulse.toggle() }
+    .sheet(isPresented: $showingPulse) {
+        NavigationStack {
+            ConsoleView()
+        }
+    }
+#endif
+```
+
+**To shake simulator**:
+- Hardware > Shake (or `Ctrl+Cmd+Z`)
+
+### Features
+
+<CardGroup cols={2}>
+  <Card title="Request inspection" icon="magnifying-glass">
+    View request/response headers, body, and timing information
+  </Card>
+  <Card title="Response preview" icon="file-code">
+    JSON formatting, syntax highlighting, and response visualization
+  </Card>
+  <Card title="Filtering" icon="filter">
+    Filter by URL, status code, method, or search terms
+  </Card>
+  <Card title="Export" icon="download">
+    Export logs for sharing or analysis
+  </Card>
+</CardGroup>
+
+### PulseProxy setup
+
+PulseProxy is automatically enabled in DEBUG builds (`src/App.swift:10-14`):
+
+```swift
+init() {
+    #if DEBUG
+    Atlantis.start(hostName: "supernova.local.")
+    NetworkLogger.enableProxy()
+    #endif
+}
+```
+
+This intercepts network requests made via URLSession and logs them to Pulse.
+
+### Viewing network logs
+
+<Steps>
+  <Step title="Make a network request">
+    Trigger any API call in the app (e.g., load payphones).
+  </Step>
+
+  <Step title="Open Pulse console">
+    Shake the device/simulator to open the console.
+  </Step>
+
+  <Step title="Inspect requests">
+    Tap any request to see:
+    - Request URL, method, headers, body
+    - Response status, headers, body
+    - Timing metrics (duration, size)
+    - Error details if the request failed
+  </Step>
+</Steps>
+
+<Info>
+  Pulse automatically captures all URLSession traffic when PulseProxy is enabled. No manual instrumentation required.
+</Info>
+
+## Atlantis (Proxyman integration)
+
+Atlantis enables debugging with [Proxyman](https://proxyman.io/), a powerful HTTP debugging proxy.
+
+### Setup
+
+<Steps>
+  <Step title="Install Proxyman">
+    Download from [proxyman.io](https://proxyman.io/) and install on your Mac.
+  </Step>
+
+  <Step title="Configure hostname">
+    Atlantis connects to `supernova.local.` by default (`src/App.swift:12`):
+
+    ```swift
+    Atlantis.start(hostName: "supernova.local.")
+    ```
+
+    To use a different hostname, modify this value and rebuild.
+  </Step>
+
+  <Step title="Enable Bonjour discovery">
+    Proxyman discovers the app via Bonjour. Grant local network permissions when prompted.
+
+    The app advertises `_Proxyman._tcp` service (`src/Info.plist:31`).
+  </Step>
+
+  <Step title="Start Proxyman">
+    Launch Proxyman on your Mac and look for "PayphoneGo" in the device list.
+  </Step>
+
+  <Step title="Inspect traffic">
+    All HTTP/HTTPS requests from the app appear in Proxyman in real-time.
+  </Step>
+</Steps>
+
+### Atlantis vs Pulse
+
+| Feature | Pulse | Atlantis (Proxyman) |
+|---------|-------|---------------------|
+| In-app console | Yes | No (requires Mac app) |
+| Request inspection | Yes | Yes (more detailed) |
+| Request modification | No | Yes |
+| Breakpoints | No | Yes |
+| Certificate pinning bypass | No | Yes |
+| Device-free debugging | Yes | No |
+
+<Tip>
+  Use Pulse for quick in-app debugging. Use Atlantis/Proxyman for advanced scenarios like modifying requests or bypassing SSL pinning.
+</Tip>
+
+## Structured logging
+
+PayphoneGo uses OSLog for structured, performant logging.
+
+### Logger implementation
+
+Custom logger wrapper (`src/Support/Logging.swift:4-13`):
+
+```swift
+struct Logger: Sendable {
+    static let app = Logger(category: "App")
+    
+    private let category: String
+    private let logger: os.Logger
+    
+    init(category: String) {
+        self.category = category
+        logger = os.Logger(subsystem: Bundle.main.bundleIdentifier!, category: category)
+    }
+}
+```
+
+### Log levels
+
+Supported levels (`src/Support/Logging.swift:57-70`):
+
+| Level | Method | OSLog Level | Use Case |
+|-------|--------|-------------|----------|
+| Trace | - | - | Detailed execution flow |
+| Debug | `debug()` | `.debug` | Development information |
+| Info | `info()` | `.info` | General information |
+| Warning | `warning()` | `.warning` | Unexpected but recoverable |
+| Error | `error()` | `.error` | Recoverable errors |
+| Fatal | `fault()` | `.fault` | Unrecoverable errors |
+
+Each level has an emoji indicator for Xcode previews:
+
+```swift
+var emoji: String {
+    switch self {
+        case .info: "ℹ️"
+        case .debug: "🐛"
+        case .error: "❗️"
+        case .fatal: "💀"
+        case .trace: "🔍"
+        case .warning: "⚠️"
+    }
+}
+```
+
+### Using the logger
+
+**In API client** (`src/Support/API.swift:20-22`):
+
+```swift
+var logger: Logger {
+    Logger(category: "API")
+}
+```
+
+**Example usage**:
+
+```swift
+let logger = Logger(category: "LocationManager")
+logger.info("Started location updates")
+logger.warning("Location permission denied")
+logger.error("Failed to fetch location: \(error)")
+```
+
+### Viewing logs
+
+**In Xcode**:
+1. Run the app
+2. Open the Debug area (`Cmd+Shift+Y`)
+3. Filter by subsystem: `build.miguel.PayphoneGo`
+
+**In Console.app**:
+1. Open Console.app
+2. Select your device/simulator
+3. Filter: `subsystem:build.miguel.PayphoneGo`
+
+**In Xcode previews**:
+
+Logs print to console with emoji indicators (`src/Support/Logging.swift:16-18`):
+
+```swift
+if ProcessInfo.processInfo.environment["XCODE_RUNNING_FOR_PREVIEWS"] == "1" {
+    print("\(level.emoji) [\(category)] \(message)")
+}
+```
+
+Example output:
+```
+🐛 [API] Fetching payphones from API
+ℹ️ [LocationManager] User location: 37.7749, -122.4194
+⚠️ [API] Request took longer than expected: 5.2s
+```
+
+## Xcode debugger
+
+### Breakpoints
+
+Set breakpoints to pause execution and inspect state:
+
+<Steps>
+  <Step title="Set a breakpoint">
+    Click the gutter next to a line number in Xcode.
+  </Step>
+
+  <Step title="Run with debugger">
+    Press `Cmd+R` (debugger attaches automatically).
+  </Step>
+
+  <Step title="Inspect variables">
+    When execution pauses, hover over variables or use the Variables view.
+  </Step>
+
+  <Step title="Control execution">
+    - Continue: `Ctrl+Cmd+Y`
+    - Step over: `F6`
+    - Step into: `F7`
+    - Step out: `F8`
+  </Step>
+</Steps>
+
+### Conditional breakpoints
+
+Right-click a breakpoint and select "Edit Breakpoint" to add conditions:
+
+```swift
+// Only pause when id == 42
+id == 42
+
+// Pause after 10 hits
+ignoreCount = 10
+```
+
+### Symbolic breakpoints
+
+Pause on all errors:
+
+1. Debug > Breakpoints > Create Symbolic Breakpoint
+2. Symbol: `swift_willThrow`
+3. Run the app
+
+Now the debugger pauses whenever an error is thrown.
+
+### LLDB commands
+
+Use LLDB in the debug console:
+
+```lldb
+# Print variable
+po variableName
+
+# Print object description
+po self
+
+# Continue execution
+continue
+
+# Print expression
+po 2 + 2
+
+# Modify variable
+expr variableName = newValue
+```
+
+## View debugging
+
+### SwiftUI view hierarchy
+
+Inspect the SwiftUI view hierarchy:
+
+1. Run the app
+2. Pause execution (Debug > Pause)
+3. Click the "Debug View Hierarchy" button (or `Cmd+Shift+V`)
+4. Explore the 3D view hierarchy
+
+<Warning>
+  View hierarchy debugging has limitations with SwiftUI. Some modifiers and layout information may not display correctly.
+</Warning>
+
+### View inspector
+
+Use Xcode's view inspector:
+
+1. Pause the app while a view is visible
+2. Select a view in the view hierarchy
+3. Open the Object Inspector (`Cmd+Opt+3`)
+4. View properties, frame, constraints
+
+### SwiftUIIntrospect
+
+PayphoneGo includes [SwiftUIIntrospect](https://github.com/siteline/swiftui-introspect) for accessing UIKit views behind SwiftUI:
+
+```swift
+import SwiftUIIntrospect
+
+List {
+    // ...
+}
+.introspect(.list, on: .iOS(.v17, .v18)) { tableView in
+    // Access UITableView directly
+    tableView.backgroundColor = .clear
+}
+```
+
+## Memory debugging
+
+### Memory graph debugger
+
+Detect memory leaks and retain cycles:
+
+<Steps>
+  <Step title="Run the app">
+    Launch the app in Xcode.
+  </Step>
+
+  <Step title="Navigate through views">
+    Exercise the feature you want to test for leaks.
+  </Step>
+
+  <Step title="Capture memory graph">
+    Click the Memory Graph button in the debug bar (or `Cmd+Shift+M`).
+  </Step>
+
+  <Step title="Find leaks">
+    Look for purple icons indicating memory leaks. Click to see retain cycles.
+  </Step>
+</Steps>
+
+### Instruments
+
+Use Instruments for detailed profiling:
+
+```bash
+# Profile allocations
+Cmd+I in Xcode > Allocations
+
+# Profile leaks
+Cmd+I in Xcode > Leaks
+
+# Profile time profiler
+Cmd+I in Xcode > Time Profiler
+```
+
+## Network debugging setup
+
+### Bonjour services
+
+The app advertises debugging services (`src/Info.plist:29-35`):
+
+```xml
+<key>NSBonjourServices</key>
+<array>
+    <string>_Proxyman._tcp</string>
+    <string>_pulse._tcp</string>
+</array>
+<key>NSLocalNetworkUsageDescription</key>
+<string>Debug network requests</string>
+```
+
+Grant local network permissions when prompted to enable Pulse and Atlantis discovery.
+
+### Testing network conditions
+
+Simulate poor network:
+
+1. Open Settings app on simulator/device
+2. Developer > Network Link Conditioner
+3. Enable and select a profile (e.g., "3G" or "Edge")
+
+<Tip>
+  On simulator, you can also use: Debug > Simulate Network Conditions.
+</Tip>
+
+## Debugging best practices
+
+### Use appropriate tools
+
+- **Quick checks**: Pulse console, print statements
+- **Network issues**: Atlantis/Proxyman with request modification
+- **Logic errors**: Xcode breakpoints and LLDB
+- **UI issues**: View hierarchy debugger
+- **Performance**: Instruments
+- **Memory leaks**: Memory graph debugger
+
+### Logging guidelines
+
+<CodeGroup>
+```swift Good: Structured logging
+logger.info("Fetching payphones")
+logger.error("Failed to decode response: \(error)")
+```
+
+```swift Avoid: Print statements
+print("Fetching payphones")  // Lost in console noise
+print(error)  // No context
+```
+</CodeGroup>
+
+### Debug build only
+
+Wrap debug code in `#if DEBUG`:
+
+```swift
+#if DEBUG
+logger.debug("Debug info: \(data)")
+#endif
+```
+
+This prevents debug code from shipping to production.
+
+## Troubleshooting debugging tools
+
+### Pulse console not opening
+
+**Symptoms**: Shake gesture doesn't work.
+
+**Solutions**:
+1. Verify DEBUG build (not Release)
+2. Check that `View+onShake.swift` extension is included
+3. Try shaking harder or using Hardware > Shake in simulator
+
+### Atlantis not connecting
+
+**Symptoms**: App doesn't appear in Proxyman.
+
+**Solutions**:
+1. Ensure Proxyman is running
+2. Grant local network permissions
+3. Verify hostname: `supernova.local.` or your custom hostname
+4. Check firewall settings on Mac
+5. Ensure device and Mac are on same network
+
+### Logs not appearing
+
+**Symptoms**: OSLog output missing in Console.app.
+
+**Solutions**:
+1. Filter by subsystem: `build.miguel.PayphoneGo`
+2. Check log level filter (set to "Debug" to see all levels)
+3. Ensure logger is initialized before logging
+
+## Next steps
+
+- Review [Project structure](/development/project-structure) to understand code organization
+- Learn about [Building](/development/building) for different configurations
+- Set up your [Development environment](/development/setup)
