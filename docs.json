@@ -43,7 +43,9 @@
           "architecture/overview",
           "architecture/api-client",
           "architecture/location-services",
-          "architecture/state-management"
+          "architecture/state-management",
+          "architecture/navigation",
+          "architecture/ui-components"
         ]
       },
       {

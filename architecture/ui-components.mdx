@@ -1,0 +1,341 @@
+---
+title: UI components
+description: Reusable SwiftUI components and view modifiers used throughout PayphoneGo
+---
+
+PayphoneGo includes several custom UI components and view modifiers that enhance the user interface.
+
+## MarqueeText
+
+A scrolling text view that automatically animates long strings that don't fit in the available space.
+
+```swift MarqueeText.swift
+struct MarqueeText: View {
+    var text: String
+    var font: UIFont
+    var leftFade: CGFloat
+    var rightFade: CGFloat
+    var startDelay: Double
+    var alignment: Alignment
+}
+```
+
+### Properties
+
+<ParamField path="text" type="String" required>
+  The text content to display
+</ParamField>
+
+<ParamField path="font" type="UIFont" required>
+  The font to use for rendering the text
+</ParamField>
+
+<ParamField path="leftFade" type="CGFloat" default="20">
+  Width of the fade gradient on the left side
+</ParamField>
+
+<ParamField path="rightFade" type="CGFloat" default="20">
+  Width of the fade gradient on the right side
+</ParamField>
+
+<ParamField path="startDelay" type="Double" default="2.0">
+  Delay in seconds before the marquee animation begins
+</ParamField>
+
+<ParamField path="alignment" type="Alignment" default=".leading">
+  Text alignment when content fits within bounds
+</ParamField>
+
+### Methods
+
+```swift
+func makeCompact(_ compact: Bool) -> Self
+```
+
+Configures the marquee for compact display mode.
+
+### Usage example
+
+```swift
+MarqueeText(
+    text: phone.rawAddress,
+    font: .systemFont(ofSize: 20, weight: .bold),
+    leftFade: 16,
+    rightFade: 16,
+    startDelay: 1.5
+)
+```
+
+The marquee automatically:
+- Measures text width against available space
+- Animates scrolling if text is too long
+- Fades edges for a smooth visual effect
+- Repeats the animation after completion
+
+## SkeletonModifier
+
+A view modifier that applies skeleton loading animations to content while data is loading.
+
+```swift SkeletonModifier.swift
+struct SkeletonModifier: ViewModifier {
+    var active: Bool
+}
+```
+
+### View extension
+
+```swift
+extension View {
+    func skeleton(isLoading: Bool) -> some View
+}
+```
+
+### Usage example
+
+```swift
+Text(phone.rawAddress)
+    .skeleton(isLoading: details == nil)
+```
+
+When `active` is `true`, the modifier:
+- Applies a shimmer animation effect
+- Redacts the underlying content
+- Creates a placeholder appearance
+- Automatically removes the effect when loading completes
+
+### PlaceholderAware protocol
+
+The skeleton system includes a protocol for placeholder-aware views:
+
+```swift
+@MainActor
+protocol PlaceholderAware {
+    var redactionReasons: RedactionReasons { get }
+    var isPlaceholder: Bool { get }
+}
+```
+
+### WithPlaceholder protocol
+
+For views that need custom placeholder content:
+
+```swift
+@MainActor
+protocol WithPlaceholder: View, PlaceholderAware {
+    associatedtype Content: View
+    associatedtype Placeholder: View
+    
+    var content: Content { get }
+    var placeholder: Placeholder { get }
+}
+```
+
+This allows views to provide alternative content during loading states while maintaining type safety.
+
+## View extensions
+
+PayphoneGo extends SwiftUI's `View` protocol with several useful modifiers.
+
+### Shake detection
+
+Detect device shake gestures (used for debug console access):
+
+```swift View+onShake.swift
+extension View {
+    func onShake(perform action: @escaping () -> Void) -> some View
+}
+```
+
+**Example:**
+
+```swift
+ContentView()
+    .onShake { showingPulse.toggle() }
+```
+
+### Conditional transformation
+
+Apply transformations conditionally:
+
+```swift View+if.swift
+extension View {
+    func if<Content: View>(
+        _ condition: Bool,
+        transform: (Self) -> Content
+    ) -> AnyView
+}
+```
+
+**Example:**
+
+```swift
+Text("Hello")
+    .if(isImportant) { view in
+        view.foregroundColor(.red).bold()
+    }
+```
+
+### Glass sheet styling
+
+Apply glass background effects to sheet presentations:
+
+```swift View+fullyGlassSheet.swift
+extension View {
+    func fullyGlassSheet() -> some View
+}
+```
+
+**Example:**
+
+```swift
+NavigationStack {
+    PhoneDetailSheet(phone: phone)
+}
+.presentationDetents([.medium, .large])
+.fullyGlassSheet()
+```
+
+### Preview data setup
+
+Configure preview environments with mock data (DEBUG builds only):
+
+```swift View+AppData+Previews.swift
+extension View {
+    func withPreviewData(wrapInNavigation: Bool = false) -> some View
+}
+```
+
+**Example:**
+
+```swift
+#Preview {
+    MainScreen()
+        .withPreviewData()
+}
+```
+
+## Environment values
+
+PayphoneGo defines custom environment values for passing data through the view hierarchy.
+
+### selectedPhone
+
+A binding to the currently selected phone, used for updating phone data from detail sheets:
+
+```swift EnvironmentValues+custom.swift
+extension EnvironmentValues {
+    @Entry var selectedPhone: Binding<Phone>?
+}
+```
+
+**Usage:**
+
+```swift
+// Set in parent view
+NavigationStack {
+    PhoneDetailSheet(phone: selectedPhone!)
+        .environment(\.selectedPhone, selectedPhoneBinding)
+}
+
+// Access in child view
+struct PhoneDetailSheet: View {
+    @Environment(\.selectedPhone) var selectedPhone
+    
+    func updateClaims() {
+        selectedPhone?.claimCount.wrappedValue = details.totalClaims
+    }
+}
+```
+
+## Helper utilities
+
+### Animated property wrapper
+
+Automatically animate value changes:
+
+```swift Animated.swift
+@propertyWrapper
+struct Animated<Value>: DynamicProperty {
+    init(wrappedValue: Value, _ animation: Animation? = .default)
+    
+    var wrappedValue: Value { get nonmutating set }
+    var projectedValue: Binding<Value> { get }
+}
+```
+
+**Example:**
+
+```swift
+struct ContentView: View {
+    @Animated(.spring()) var scale: CGFloat = 1.0
+    
+    var body: some View {
+        Circle()
+            .scaleEffect(scale)
+            .onTapGesture {
+                scale = 1.5 // Automatically animates with spring
+            }
+    }
+}
+```
+
+### Tap and with functions
+
+Functional helpers for inline object configuration:
+
+```swift helpers.swift
+func tap<T>(_ value: T, _ block: (inout T) throws -> Void) throws -> T
+
+func with<T, R>(_ value: T, _ block: (inout T) throws -> R) throws -> R
+```
+
+**Example:**
+
+```swift
+// Configure and return
+let formatter = tap(DateFormatter()) { formatter in
+    formatter.timeZone = TimeZone(secondsFromGMT: 0)
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    formatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'"
+}
+
+// Configure and execute
+let result = with(URLRequest(url: url)) { request in
+    request.httpMethod = "POST"
+    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+}
+```
+
+Both functions support async/await:
+
+```swift
+let data = await tap(MyData()) { data in
+    await data.load()
+}
+```
+
+### Debug dump
+
+Quick debugging helper that dumps and returns values:
+
+```swift helpers.swift
+func dd<T>(_ value: T) -> T
+```
+
+**Example:**
+
+```swift
+let phones = dd(try await api.phones())
+// Prints phones array and returns it for further use
+```
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="Architecture overview" icon="sitemap" href="/architecture/overview">
+    Understand the overall app architecture
+  </Card>
+  <Card title="State management" icon="database" href="/architecture/state-management">
+    Learn about state and data flow patterns
+  </Card>
+</CardGroup>

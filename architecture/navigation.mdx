@@ -1,0 +1,306 @@
+---
+title: Navigation
+description: Type-safe navigation system using NavigationKit in PayphoneGo
+---
+
+PayphoneGo uses [NavigationKit](https://github.com/m1guelpf/NavigationKit) to implement type-safe, centralized navigation throughout the app.
+
+## Destination enum
+
+All navigation destinations are defined in a single enum, ensuring compile-time safety and preventing navigation errors.
+
+```swift Destination.swift
+enum Destination: NavigationDestination {
+    enum Tabs: String, TabRepresentable
+    enum Pages: PageRepresentable
+    enum Sheets: Identifiable, SheetRepresentable
+    enum FullScreen: Identifiable, FullScreenRepresentable
+}
+```
+
+## Tabs
+
+Tab-based navigation for the main app sections:
+
+```swift Destination.swift
+enum Tabs: String, TabRepresentable {
+    case home
+    case leaderboard
+}
+```
+
+### Available tabs
+
+<Card title="Home" icon="house">
+  Main map interface showing all payphones and user location
+</Card>
+
+<Card title="Leaderboard" icon="trophy">
+  Displays user rankings and claim statistics (placeholder)
+</Card>
+
+<Note>
+Currently only the `home` tab is fully implemented. The `leaderboard` tab shows an "UnavailableScreen" placeholder.
+</Note>
+
+## Pages
+
+Push-based navigation for sub-pages:
+
+```swift Destination.swift
+enum Pages: PageRepresentable {
+    case comingSoon(title: String)
+    
+    @ViewBuilder var view: some View {
+        switch self {
+            case let .comingSoon(title): UnavailableScreen(title: title)
+        }
+    }
+}
+```
+
+### Usage
+
+```swift
+NavigationButton(to: .comingSoon(title: "Settings")) {
+    Label("Settings", systemImage: "gear")
+}
+```
+
+## Sheets
+
+Modal sheet presentations:
+
+```swift Destination.swift
+enum Sheets: Identifiable, SheetRepresentable {
+    case browser(url: URL)
+    case phoneDetail(phone: Phone)
+    
+    var id: String
+    var detents: Set<PresentationDetent>
+    var content: some View
+}
+```
+
+### Available sheets
+
+#### Phone detail
+
+Shows detailed information about a specific payphone:
+
+```swift
+case phoneDetail(phone: Phone)
+```
+
+**Presentation detents:**
+- `.medium` - Collapsed state showing address and basic info
+- `.large` - Expanded state showing full claim history
+
+**Usage:**
+
+```swift
+.sheet(isPresented: Binding($selectedPhoneId)) {
+    NavigationStack {
+        PhoneDetailSheet(phone: selectedPhone!)
+            .environment(\.selectedPhone, selectedPhoneBinding)
+    }
+    .presentationDetents([collapsedDetent, .medium, .large])
+}
+```
+
+#### Browser
+
+In-app Safari browser:
+
+```swift
+case browser(url: URL)
+```
+
+**Presentation detents:**
+- `.large` - Full-screen browser
+
+**Usage:**
+
+```swift
+router.present(sheet: .browser(url: URL(string: "https://walzr.com")!))
+```
+
+## Full screen
+
+Full-screen modal presentations:
+
+```swift Destination.swift
+enum FullScreen: Identifiable, FullScreenRepresentable {
+    case browser(url: URL)
+    
+    var id: String
+    var content: some View
+}
+```
+
+### Usage
+
+```swift
+router.present(fullScreen: .browser(url: url))
+```
+
+<Info>
+Full-screen presentations are used for immersive experiences that require the entire screen.
+</Info>
+
+## Router
+
+The `Router` manages navigation state and provides methods for programmatic navigation.
+
+```swift Destination.swift
+typealias Router = NavigationKit.Router<Destination>
+```
+
+### Creating a router
+
+```swift ContentView.swift
+@State var router = Router(level: 0, identifierTab: nil)
+```
+
+### Router methods
+
+<Accordion title="Programmatic navigation">
+```swift
+// Navigate to a page
+router.navigate(to: .comingSoon(title: "Profile"))
+
+// Present a sheet
+router.present(sheet: .phoneDetail(phone: phone))
+
+// Present full screen
+router.present(fullScreen: .browser(url: url))
+
+// Dismiss current presentation
+router.dismiss()
+
+// Pop to root
+router.popToRoot()
+```
+</Accordion>
+
+## NavigationContainer
+
+Wraps content with navigation state management:
+
+```swift Destination.swift
+typealias NavigationContainer<Content: View> = 
+    NavigationKit.NavigationContainer<Content, Destination>
+```
+
+### Usage
+
+```swift ContentView.swift
+NavigationContainer(parentRouter: router, tab: .home) {
+    MainScreen()
+}
+.environment(locationManager)
+```
+
+**Parameters:**
+- `parentRouter` - The router instance managing navigation state
+- `tab` - The initial tab destination
+- `content` - The view content to wrap
+
+## NavigationButton
+
+Type-safe navigation button component:
+
+```swift Destination.swift
+typealias NavigationButton<Content: View> = 
+    NavigationKit.NavigationButton<Content, Destination>
+```
+
+### Usage
+
+```swift
+NavigationButton(to: .comingSoon(title: "Settings")) {
+    Label("Settings", systemImage: "gear")
+        .padding()
+}
+```
+
+The button automatically handles navigation when tapped, eliminating the need for manual router calls.
+
+## Navigation patterns
+
+### Tab switching
+
+```swift
+struct TabBar: View {
+    @Binding var selectedTab: Destination.Tabs
+    
+    var body: some View {
+        HStack {
+            Button("Home") {
+                selectedTab = .home
+            }
+            Button("Leaderboard") {
+                selectedTab = .leaderboard
+            }
+        }
+    }
+}
+```
+
+### Sheet presentation with state
+
+```swift
+struct MainScreen: View {
+    @State private var selectedPhone: Phone?
+    
+    var body: some View {
+        Map()
+            .sheet(item: $selectedPhone) { phone in
+                NavigationStack {
+                    PhoneDetailSheet(phone: phone)
+                }
+            }
+    }
+}
+```
+
+### Deep linking
+
+NavigationKit supports deep linking through the router:
+
+```swift
+// Handle deep link
+func handleDeepLink(phoneId: Int) {
+    if let phone = phones.first(where: { $0.id == phoneId }) {
+        router.present(sheet: .phoneDetail(phone: phone))
+    }
+}
+```
+
+## Benefits of type-safe navigation
+
+<CardGroup cols={2}>
+  <Card title="Compile-time safety" icon="shield-check">
+    Catches navigation errors at compile time, not runtime
+  </Card>
+  <Card title="Centralized configuration" icon="sitemap">
+    All destinations defined in one place for easy maintenance
+  </Card>
+  <Card title="Reusable components" icon="clone">
+    Share navigation logic across the app
+  </Card>
+  <Card title="Testable" icon="vial">
+    Easy to mock and test navigation flows
+  </Card>
+</CardGroup>
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="Architecture overview" icon="sitemap" href="/architecture/overview">
+    Learn about the overall app structure
+  </Card>
+  <Card title="UI components" icon="palette" href="/architecture/ui-components">
+    Explore custom view components
+  </Card>
+</CardGroup>
