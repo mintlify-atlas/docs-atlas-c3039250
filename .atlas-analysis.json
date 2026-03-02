@@ -1,0 +1,72 @@
+{
+  "projectType": "frontend",
+  "projectName": "PayphoneGo",
+  "projectDescription": "An iOS client for Riley Waltz's PayphoneGo location-based game where users discover and claim payphones.",
+  "theme": "palm",
+  "primaryColor": "#0066CC",
+  "lightColor": "#3D8AFF",
+  "darkColor": "#004999",
+  "navigation": {
+    "groups": [
+      {
+        "group": "Get Started",
+        "pages": [
+          "introduction",
+          "installation",
+          "quickstart"
+        ]
+      },
+      {
+        "group": "Features",
+        "pages": [
+          "features/map-interface",
+          "features/phone-discovery",
+          "features/navigation",
+          "features/claim-history"
+        ]
+      },
+      {
+        "group": "Architecture",
+        "pages": [
+          "architecture/overview",
+          "architecture/api-client",
+          "architecture/location-services",
+          "architecture/state-management"
+        ]
+      },
+      {
+        "group": "Development",
+        "pages": [
+          "development/setup",
+          "development/project-structure",
+          "development/building",
+          "development/debugging"
+        ]
+      },
+      {
+        "group": "API Reference",
+        "pages": [
+          "api/endpoints",
+          "api/models",
+          "api/responses"
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Interactive map view with realistic elevation showing nearby payphones",
+    "Location-based discovery and navigation to payphones",
+    "View claim history and user details for each payphone",
+    "Distance calculation from user to payphone locations",
+    "Filter payphones by claim status (all/unclaimed)",
+    "One-tap navigation to nearest unclaimed payphone"
+  ],
+  "publicApiSurface": [
+    "API.phones() -> [Phone]",
+    "API.phone(id: Int) -> PhoneDetails",
+    "Phone (model with lat/lng, address, claim data)",
+    "Claim (model with user, timestamp, voicemail URL)",
+    "LocationManager (handles user location authorization)",
+    "AppData (main app state management)"
+  ]
+}
